@@ -750,23 +750,60 @@ function qrFullView(){
 /* ---------- หน้า Broadcast (เปิดด้วย #board) ---------- */
 const boardUrl = live => joinUrl().split('#')[0] + (live ? '#board-live' : '#board');
 const boardList = st => st.status === 'ended' ? st.questions.map((q, i) => i) : mainIdx(st);
+/* คุมกิจกรรมจริงจากหน้า Broadcast (เฉพาะแอดมิน และไม่ใช่โหมดตามสดอย่างเดียว) */
+function ctlGo(d){
+  const st = S.state; if (S.boardLive || !S.isAdmin || !st || st.status !== 'active') return;
+  const mains = mainIdx(st), np = mainPos(st) + d; if (np < 0 || np >= mains.length) return;
+  adm(() => S.db.doc('live/state').update({ cur:mains[np], board:{ mode:'live', qid:null } }));
+}
+function ctlReveal(){
+  const st = S.state; if (S.boardLive || !S.isAdmin || !st || st.status !== 'active') return;
+  const q = st.questions[st.cur], rev = !!(st.revealed && st.revealed[q.id]);
+  adm(() => S.db.doc('live/state').update({ revealed:{ [q.id]:!rev }, board:{ mode:'live', qid:null } }));
+}
+/* หลังจบกิจกรรม: เลื่อนดูผลทุกข้อได้ในเครื่องนี้เท่านั้น (ไม่กระทบใคร) */
 function boardGo(d){
-  const st = S.state; if (S.boardLive || !st || (st.status !== 'active' && st.status !== 'ended')) return;
-  const list = boardList(st), live = st.status === 'active' && S.ui.bFollow !== false;
-  let pos = live ? list.indexOf(st.cur) : (S.ui.bPos != null ? S.ui.bPos : 0);
-  if (pos < 0) pos = 0;
-  S.ui.bPos = Math.min(list.length - 1, Math.max(0, pos + d)); S.ui.bFollow = false; render();
+  const st = S.state; if (!st || st.status !== 'ended') return;
+  const list = boardList(st); S.ui.bPos = Math.min(list.length - 1, Math.max(0, (S.ui.bPos || 0) + d)); render();
 }
 document.addEventListener('keydown', e => {
-  if (!S.board || /^(INPUT|TEXTAREA|SELECT)$/.test((e.target && e.target.tagName) || '')) return;
-  if (e.key === 'ArrowRight') boardGo(1); else if (e.key === 'ArrowLeft') boardGo(-1);
+  if (!S.board || S.boardLive || !S.state || /^(INPUT|TEXTAREA|SELECT)$/.test((e.target && e.target.tagName) || '')) return;
+  const next = e.key === 'ArrowRight' || e.key === 'PageDown', prev = e.key === 'ArrowLeft' || e.key === 'PageUp';
+  if (next || prev){ e.preventDefault(); if (S.state.status === 'ended') boardGo(next ? 1 : -1); else ctlGo(next ? 1 : -1); }
+  else if ((e.key === 'r' || e.key === 'R') && S.state.status === 'active') ctlReveal();
 });
+function boardBar(st){
+  if (S.boardLive) return null;
+  const bc = st.board || { mode:'live' }, bar = h('div', { class:'board-nav' });
+  if (st.status === 'lobby'){
+    bar.append(h('span', { class:'muted' }, 'ออนไลน์อยู่ ' + activeIds().size + ' คน'), h('button', { class:'btn primary', type:'button', on:{ click: () => adm(() => S.db.doc('live/state').update({ status:'active', startedAt:Date.now() })) } }, 'เริ่มตอบคำถาม'));
+    return bar;
+  }
+  if (st.status === 'active'){
+    const mains = mainIdx(st), pos = mainPos(st), n = mains.length, q = st.questions[st.cur], rev = !!(st.revealed && st.revealed[q.id]);
+    bar.append(
+      h('button', { class:'btn', type:'button', disabled: pos <= 0, on:{ click: () => ctlGo(-1) } }, '‹ ข้อก่อนหน้า'),
+      h('span', { class:'muted' }, 'ข้อ ' + (pos + 1) + ' จาก ' + n),
+      h('button', { class:'btn' + (rev ? '' : ' primary'), type:'button', on:{ click: ctlReveal } }, rev ? 'ซ่อนผล' : 'เปิดเผยผล'),
+      h('button', { class:'btn', type:'button', disabled: pos >= n - 1, on:{ click: () => ctlGo(1) } }, pos >= n - 1 ? 'ข้อสุดท้าย' : 'ข้อถัดไป ›'));
+    if (bc.mode !== 'live') bar.append(h('button', { class:'btn sm', type:'button', on:{ click: () => setBoard('live') } }, 'จอแสดงอย่างอื่นอยู่ กลับไปตามสด'));
+    bar.append(h('span', { class:'muted small' }, 'คีย์ลัด ← → หรือ PageUp/PageDown เปลี่ยนข้อ และ R เปิดเผยผล'));
+    return bar;
+  }
+  if (st.status === 'ended'){
+    const list = boardList(st), pos = Math.min(list.length - 1, S.ui.bPos || 0);
+    bar.append(h('button', { class:'btn', type:'button', disabled: pos <= 0, on:{ click: () => boardGo(-1) } }, '‹ ก่อนหน้า'), h('span', { class:'muted' }, 'ข้อ ' + (pos + 1) + ' จาก ' + list.length), h('button', { class:'btn', type:'button', disabled: pos >= list.length - 1, on:{ click: () => boardGo(1) } }, 'ถัดไป ›'));
+    return bar;
+  }
+  return null;
+}
 function boardView(){
   const st = S.state, frag = document.createDocumentFragment();
   frag.append(h('div', { class:'board-top' }, h('div', { class:'brand' }, 'เสียงของเรา'), h('div', { class:'muted' }, st && st.title ? st.title : '')));
   if (!st || st.status === 'idle'){ frag.append(msgView('รอผู้ดำเนินกิจกรรมเริ่ม', 'หน้านี้จะแสดงผลทีละข้อเมื่อกิจกรรมเริ่ม')); return frag; }
-  const bc = st.board || { mode:'live' };
-  if (bc.mode === 'blank'){ frag.append(h('div', { class:'centered' }, h('h1', null, st.title || 'เสียงของเรา'), h('p', { class:'hint' }, 'พักสักครู่'))); return frag; }
+  const bc = st.board || { mode:'live' }, bar = boardBar(st);
+  const done = () => { if (bar) frag.append(bar); return frag; };
+  if (bc.mode === 'blank'){ frag.append(h('div', { class:'centered' }, h('h1', null, st.title || 'เสียงของเรา'), h('p', { class:'hint' }, 'พักสักครู่'))); return done(); }
   if (bc.mode === 'q'){
     const fq = st.questions.find(x => x.id === bc.qid);
     if (fq){
@@ -774,39 +811,34 @@ function boardView(){
       const fbox = h('div', null, h('p', { class:'progress' }, fq.lobby ? (fq.part || 'ข้อมูลทั่วไป') : progressLine(fq, mp, mi.length)), h('h1', null, fq.text));
       if (fq.type === 'text'){ fbox.append(h('p', { class:'total' }, 'มีผู้ร่วมแสดงความเห็น ' + ftl.withText + ' คน')); const pc = publicCloud(fq, st); if (pc) fbox.append(pc); }
       else fbox.append(h('p', { class:'total', 'aria-live':'polite' }, 'ตอบแล้ว ' + ftl.total + ' คน'), resultBlock(fq, ftl.counts, { total:ftl.total, scale:1.5, key:'board-' + st.sid + fq.id }));
-      frag.append(fbox); return frag;
+      frag.append(fbox); return done();
     }
   }
   if (bc.mode === 'qr' || st.status === 'lobby'){
     const url = joinUrl().split('#')[0];
     frag.append(h('div', { class:'qrfull' }, h('h1', null, 'สแกนเพื่อเข้าร่วม'), h('div', { class:'qrbox' }, qrNode(url)), h('p', { class:'qrurl' }, url), h('p', { class:'total', 'aria-live':'polite' }, 'ออนไลน์อยู่ ' + activeIds().size + ' คน')));
-    return frag;
+    return done();
   }
-  const list = boardList(st), live = st.status === 'active' && (S.boardLive || S.ui.bFollow !== false);
-  let pos = (live || S.boardLive) ? list.indexOf(st.cur) : (S.ui.bPos != null ? S.ui.bPos : (st.status === 'active' ? list.indexOf(st.cur) : 0));
+  const ended = st.status === 'ended', list = boardList(st);
+  let pos = ended && !S.boardLive ? (S.ui.bPos || 0) : list.indexOf(st.cur);
   pos = Math.min(list.length - 1, Math.max(0, pos));
-  const q = st.questions[list[pos]], revealed = st.status === 'ended' || !!(st.revealed && st.revealed[q.id]);
+  const q = st.questions[list[pos]], revealed = ended || !!(st.revealed && st.revealed[q.id]), activeNow = st.status === 'active';
   const box = h('div', null, h('p', { class:'progress' }, progressLine(q, pos, list.length)), h('h1', null, q.text));
   const tl = tally(q);
   if (!revealed){
     const online = activeIds().size, ans = answeredActive(q.id), joined = Math.max(online, ans);
-    box.append(h('div', { class:'sent', 'aria-live':'polite' }, live ? 'กำลังรอคำตอบ ' + ans + ' จาก ' + joined + ' คน ผลจะขึ้นเมื่อผู้ดำเนินกิจกรรมเปิดเผย' : 'ข้อนี้ยังไม่ได้เปิดเผยผล',
-      live ? h('div', { class:'meter' }, h('b', { style:'width:' + (joined ? Math.round(100 * ans / joined) : 0) + '%' })) : null));
+    box.append(h('div', { class:'sent', 'aria-live':'polite' }, 'กำลังรอคำตอบ ' + ans + ' จาก ' + joined + ' คน ผลจะขึ้นเมื่อผู้ดำเนินกิจกรรมเปิดเผย', h('div', { class:'meter' }, h('b', { style:'width:' + (joined ? Math.round(100 * ans / joined) : 0) + '%' }))));
   } else if (q.type === 'text'){
     box.append(h('p', { class:'total' }, 'มีผู้ร่วมแสดงความเห็น ' + tl.withText + ' คน')); const pc = publicCloud(q, st); if (pc) box.append(pc);
   } else {
     box.append(h('p', { class:'total', 'aria-live':'polite' }, 'ตอบแล้ว ' + tl.total + ' คน'), resultBlock(q, tl.counts, { total:tl.total, scale:1.5, key:'board-' + st.sid + q.id }));
   }
+  frag.append(box);
   if (S.boardLive){
-    frag.append(box, h('div', { class:'board-nav' }, st.status === 'active' ? h('span', { class:'live-badge' }, '● ถ่ายทอดสด') : h('span', { class:'muted' }, 'จบกิจกรรมแล้ว ขอบคุณที่ร่วมส่งเสียง'), h('span', { class:'muted' }, 'ข้อ ' + (pos + 1) + ' จาก ' + list.length)));
+    frag.append(h('div', { class:'board-nav' }, activeNow ? h('span', { class:'live-badge' }, '● ถ่ายทอดสด') : h('span', { class:'muted' }, 'จบกิจกรรมแล้ว ขอบคุณที่ร่วมส่งเสียง'), h('span', { class:'muted' }, 'ข้อ ' + (pos + 1) + ' จาก ' + list.length)));
     return frag;
   }
-  frag.append(box, h('div', { class:'board-nav' },
-    h('button', { class:'btn', type:'button', disabled: pos <= 0, on:{ click: () => boardGo(-1) } }, '‹ ก่อนหน้า'),
-    h('span', { class:'muted' }, 'ข้อ ' + (pos + 1) + ' จาก ' + list.length),
-    h('button', { class:'btn', type:'button', disabled: pos >= list.length - 1, on:{ click: () => boardGo(1) } }, 'ถัดไป ›'),
-    live ? h('span', { class:'live-badge' }, '● ถ่ายทอดสด') : (st.status === 'active' ? h('button', { class:'btn primary', type:'button', on:{ click: () => { S.ui.bFollow = true; S.ui.bPos = null; render(); } } }, 'กลับไปตามสด') : null)));
-  return frag;
+  return done();
 }
 function boardGate(){
   return h('div', null,
@@ -830,7 +862,7 @@ function boardControl(st){
     h('label', { class:'field', for:'b-q', style:'margin-top:12px' }, 'หรือเลือกข้อที่จะแสดงผลบนจอ', sel),
     h('div', { class:'actions', style:'margin-top:0' }, h('button', { class:'btn sm' + (b.mode === 'q' ? ' primary' : ''), type:'button', on:{ click: () => setBoard('q', sel.value) } }, 'แสดงผลข้อนี้บนจอ')),
     warn,
-    h('p', { class:'note' }, 'จอ Broadcast จะค้างตามที่เลือกจนกว่าจะกด “ตามสด” หน้าจอผู้เข้าร่วมไม่เปลี่ยนตาม'));
+    h('p', { class:'note' }, 'จอ Broadcast จะค้างตามที่เลือกจนกว่าจะกด “ตามสด” (หรือกดข้อก่อนหน้า/ถัดไปบนหน้า Broadcast) หน้าจอผู้เข้าร่วมไม่เปลี่ยนตาม'));
   d.addEventListener('toggle', () => { S.ui.bcOpen = d.open; });
   return d;
 }
@@ -844,8 +876,8 @@ function boardCard(){
   return h('div', { class:'qrcard' },
     h('h2', null, 'หน้า Broadcast สำหรับฉายให้ทุกคนดู'),
     h('p', { class:'hint' }, 'จอใหญ่ที่ขึ้น QR ตอนรอ และแสดงผลทีละข้อตามที่คุณเปิดเผย เปิดได้เฉพาะเมื่อเข้าสู่ระบบผู้ดำเนินกิจกรรม (ถ้าเปิดบนเครื่องอื่น ต้องล็อกอินที่เครื่องนั้นก่อน) ไม่นับเป็นผู้เข้าร่วม'),
-    row(false, 'แบบเลื่อนดูได้', 'ผู้ชมกดย้อนดูข้อก่อนหน้าได้ (ปุ่มหรือลูกศรซ้าย/ขวา) และกลับไปตามสดได้'),
-    row(true, 'แบบตามสดอย่างเดียว', 'ไม่มีปุ่มเลื่อน ผู้ชมเปลี่ยนข้อเองไม่ได้ เหมาะกับจอใหญ่หน้าห้อง'));
+    row(false, 'แบบคุมกิจกรรมได้', 'มีปุ่มข้อก่อนหน้า ข้อถัดไป และเปิดเผยผล คุมกิจกรรมจริงจากหน้านี้ได้เลย ใช้คีย์ลัดหรือรีโมทพรีเซนต์ (PageUp/PageDown) ก็ได้'),
+    row(true, 'แบบตามสดอย่างเดียว', 'ไม่มีปุ่มและคีย์ลัด คุมจากหน้านี้ไม่ได้ เหมาะกับจอใหญ่หน้าห้องที่ไม่อยากให้ใครเผลอกด'));
 }
 
 function adminLive(){
@@ -907,7 +939,7 @@ function adminLive(){
   const q = st.questions[st.cur], mains = mainIdx(st), pos = mainPos(st), n = mains.length;
   const online = activeIds().size, ans = answeredCount(q.id), ansA = answeredActive(q.id), revealed = !!(st.revealed && st.revealed[q.id]);
   frag.append(h('p', { class:'progress' }, st.title));
-  frag.append(h('div', { class:'actions', style:'margin:0 0 10px' }, h('button', { class:'btn sm', type:'button', on:{ click: () => { S.ui.qrFull = true; render(); } } }, 'แสดง QR ให้ผู้เข้าร่วมสแกน'), h('button', { class:'btn sm', type:'button', on:{ click: () => window.open(boardUrl(), '_blank') } }, 'Broadcast (เลื่อนดูได้)'), h('button', { class:'btn sm', type:'button', on:{ click: () => window.open(boardUrl(true), '_blank') } }, 'Broadcast (ตามสดอย่างเดียว)')));
+  frag.append(h('div', { class:'actions', style:'margin:0 0 10px' }, h('button', { class:'btn sm', type:'button', on:{ click: () => { S.ui.qrFull = true; render(); } } }, 'แสดง QR ให้ผู้เข้าร่วมสแกน'), h('button', { class:'btn sm', type:'button', on:{ click: () => window.open(boardUrl(), '_blank') } }, 'Broadcast (คุมข้อได้)'), h('button', { class:'btn sm', type:'button', on:{ click: () => window.open(boardUrl(true), '_blank') } }, 'Broadcast (ตามสดอย่างเดียว)')));
   frag.append(boardControl(st));
   frag.append(h('div', { class:'stat' },
     h('div', null, h('span', { class:'big' }, online), h('small', null, 'ออนไลน์อยู่ตอนนี้')),
