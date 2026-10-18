@@ -173,6 +173,38 @@ const S = {
   chain: Promise.resolve(), autoBusy: false
 };
 const prevDots = {};
+S.presence = {}; S.offset = 0;
+const P = { on:false, key:null, timer:null };
+
+/* ---------- presence: นับเฉพาะคนที่เปิดหน้านี้และอยู่หน้าจอ ---------- */
+function activeIds(){
+  const st = S.state, a = new Set(); if (!st) return a;
+  const now = Date.now() + (S.offset || 0);
+  Object.keys(S.presence).forEach(id => { const p = S.presence[id]; if (p && p.sid === st.sid && p.v === true && typeof p.t === 'number' && now - p.t < 50000) a.add(id); });
+  return a;
+}
+function answeredActive(qid){
+  let n = 0; activeIds().forEach(id => { const v = S.votes[id]; if (v && v.sid === (S.state && S.state.sid) && v.answers && Number.isInteger(v.answers[qid])) n++; });
+  return n;
+}
+function pushPresence(){
+  if (!S.rdb || !S.state) return;
+  S.rdb.ref('presence/' + S.uid).set({ sid:S.state.sid, v:document.visibilityState === 'visible', t:firebase.database.ServerValue.TIMESTAMP }).catch(() => {});
+}
+function updatePresence(){
+  if (!S.rdb || !S.uid) return;
+  const st = S.state;
+  const want = S.mode === 'live' && st && (st.status === 'active' || st.status === 'lobby') && (!S.isAdmin || S.tab === 'participant');
+  const ref = S.rdb.ref('presence/' + S.uid);
+  if (!want){
+    if (P.on){ P.on = false; P.key = null; clearInterval(P.timer); ref.onDisconnect().cancel(); ref.remove().catch(() => {}); }
+    return;
+  }
+  if (!P.on){ P.on = true; ref.onDisconnect().remove(); P.timer = setInterval(() => { if (P.on) pushPresence(); }, 15000); }
+  const key = st.sid + ':' + (document.visibilityState === 'visible');
+  if (P.key !== key){ P.key = key; pushPresence(); }
+}
+document.addEventListener('visibilitychange', updatePresence);
 
 /* ================= helpers ================= */
 function h(tag, props, ...kids){
@@ -246,6 +278,10 @@ function msgView(title, sub){ return h('div', { class:'centered' }, h('h1', null
 
 function participantView(){
   const st = S.state;
+  if (st && st.status === 'lobby'){
+    const online = activeIds().size;
+    return msgView('รอผู้ดำเนินกิจกรรมเริ่ม', 'คุณอยู่ในห้องแล้ว ตอนนี้มีคนออนไลน์ ' + Math.max(online, 1) + ' คน คำถามข้อแรกจะขึ้นเองเมื่อพร้อม');
+  }
   if (!st || st.status === 'idle') return msgView('รอผู้ดำเนินกิจกรรมเริ่ม', 'หน้านี้จะเปลี่ยนเป็นคำถามข้อแรกเองเมื่อพร้อม');
   if (st.status === 'ended'){
     const frag = document.createDocumentFragment();
@@ -276,7 +312,7 @@ function participantView(){
     });
     frag.append(list);
     if (mine != null){
-      const joined = cohort().length, ans = answeredCount(q.id);
+      const online = activeIds().size, ans = answeredActive(q.id), joined = Math.max(online, ans);
       frag.append(h('div', { class:'sent', 'aria-live':'polite' },
         'ส่งคำตอบแล้ว รอเพื่อนๆ ' + ans + ' จาก ' + joined + ' คน ผลจะขึ้นเองเมื่อผู้ดำเนินกิจกรรมเปิดเผย',
         h('div', { class:'meter' }, h('b', { style:'width:' + (joined ? Math.round(100 * ans / joined) : 0) + '%' }))));
@@ -306,7 +342,7 @@ function ensureJoined(){
   S.joinedSid = st.sid;
   const mv = S.votes[S.uid];
   if (mv && mv.sid === st.sid) S.mine = { sid:st.sid, answers:Object.assign({}, mv.answers) };
-  else { S.mine = { sid:st.sid, answers:{} }; saveMine(); }
+  else S.mine = { sid:st.sid, answers:{} };
 }
 
 /* ================= แอดมิน: ควบคุมกิจกรรม ================= */
@@ -319,12 +355,12 @@ function startSession(title, auto){
   const qs = bankQs().filter(q => q.enabled !== false).map(q => ({ id:q.id, text:q.text, hint:q.hint || '', options:q.options, benchmark:q.benchmark || null }));
   if (!qs.length){ S.ui.startErr = 'เปิดใช้คำถามอย่างน้อย 1 ข้อในแท็บ “คำถาม” ก่อน'; render(); return; }
   S.ui.startErr = '';
-  adm(() => S.db.doc('live/state').set({ sid:uidNew('s'), status:'active', title:title || 'Workshop', questions:qs, cur:0, revealed:{}, auto:!!auto, startedAt:Date.now() }));
+  adm(() => S.db.doc('live/state').set({ sid:uidNew('s'), status:'lobby', title:title || 'Workshop', questions:qs, cur:0, revealed:{}, auto:!!auto }));
 }
 function buildArchive(){
   const st = S.state;
   return {
-    sid:st.sid, title:st.title, startedAt:st.startedAt || null, endedAt:Date.now(), participants:cohort().length,
+    sid:st.sid, title:st.title, startedAt:st.startedAt || null, endedAt:Date.now(), participants:cohort().filter(v => v.answers && Object.keys(v.answers).length > 0).length,
     questions: st.questions.map(q => { const counts = countsFor(q.id, q.options.length); return { id:q.id, text:q.text, options:q.options, benchmark:q.benchmark || null, counts, total:counts.reduce((a, b) => a + b, 0) }; })
   };
 }
@@ -340,8 +376,8 @@ function checkAuto(){
   const st = S.state;
   if (!S.isAdmin || !st || st.status !== 'active' || !st.auto || S.autoBusy) return;
   const q = st.questions[st.cur]; if (!q || (st.revealed && st.revealed[q.id])) return;
-  const joined = cohort().length;
-  if (joined > 0 && answeredCount(q.id) >= joined){
+  const online = activeIds().size;
+  if (online > 0 && answeredActive(q.id) >= online){
     S.autoBusy = true;
     S.db.doc('live/state').update({ revealed:{ [q.id]:true } }).catch(() => {}).then(() => { S.autoBusy = false; });
   }
@@ -391,21 +427,35 @@ function joinCard(){
       h('button', { class:'btn sm', type:'button', on:{ click: () => { S.ui.qrFull = true; render(); } } }, 'แสดง QR เต็มจอสำหรับฉาย'), copy));
 }
 function qrFullView(){
-  const st = S.state, active = st && st.status === 'active';
+  const st = S.state, active = st && (st.status === 'active' || st.status === 'lobby');
   return h('div', { class:'qrfull' },
     h('h1', null, 'สแกนเพื่อเข้าร่วม'),
     h('div', { class:'qrbox' }, qrNode(joinUrl())),
     h('p', { class:'qrurl' }, joinUrl()),
-    active ? h('p', { class:'total', 'aria-live':'polite' }, 'เข้าร่วมแล้ว ' + cohort().length + ' คน') : h('p', { class:'muted' }, 'ยังไม่เริ่มกิจกรรม'),
+    active ? h('p', { class:'total', 'aria-live':'polite' }, 'ออนไลน์อยู่ ' + activeIds().size + ' คน') : h('p', { class:'muted' }, 'ยังไม่เริ่มกิจกรรม'),
     h('div', { class:'actions', style:'justify-content:center' }, h('button', { class:'btn', type:'button', on:{ click: () => { S.ui.qrFull = false; render(); } } }, 'ปิด')));
 }
 
 function adminLive(){
   const st = S.state, frag = document.createDocumentFragment();
+  if (st && st.status === 'lobby'){
+    const online = activeIds().size;
+    frag.append(h('p', { class:'progress' }, st.title));
+    frag.append(h('h1', null, 'ห้องรอผู้เข้าร่วม'));
+    frag.append(h('p', { class:'hint' }, 'ผู้เข้าร่วมสแกน QR เข้ามารอได้เลย แต่ยังตอบไม่ได้ จะเห็นคำถามข้อแรกทันทีที่คุณกดเริ่ม'));
+    frag.append(h('div', { class:'stat' }, h('div', null, h('span', { class:'big', 'aria-live':'polite' }, online), h('small', null, 'ออนไลน์อยู่ตอนนี้'))));
+    frag.append(h('div', { class:'actions' },
+      h('button', { class:'btn primary', type:'button', on:{ click: () => adm(() => S.db.doc('live/state').update({ status:'active', startedAt:Date.now() })) } }, 'เริ่มตอบคำถาม'),
+      h('button', { class:'btn danger' + (S.ui.confirmCancel ? ' sure' : ''), type:'button', on:{ click: () => { if (S.ui.confirmCancel){ S.ui.confirmCancel = false; adm(() => S.db.doc('live/state').set({ status:'idle' })); } else { S.ui.confirmCancel = true; render(); } } } }, S.ui.confirmCancel ? 'ยืนยัน ยกเลิกรอบนี้' : 'ยกเลิกรอบนี้'),
+      S.ui.confirmCancel ? h('button', { class:'btn sm', type:'button', on:{ click: () => { S.ui.confirmCancel = false; render(); } } }, 'ไม่ยกเลิก') : null));
+    if (S.adminErr) frag.append(h('p', { class:'err' }, S.adminErr));
+    frag.append(joinCard());
+    return frag;
+  }
   if (!st || st.status !== 'active'){
     const ended = st && st.status === 'ended';
     frag.append(h('h1', null, ended ? 'กิจกรรมล่าสุดจบแล้ว' : 'เริ่มกิจกรรมใหม่'));
-    frag.append(h('p', { class:'hint' }, ended ? 'ผลถูกบันทึกในแท็บ “สถิติ” แล้ว เริ่มรอบใหม่ได้เลย' : 'ตั้งชื่อรอบนี้ แล้วเปิดให้ผู้เข้าร่วมเข้ามาตอบ'));
+    frag.append(h('p', { class:'hint' }, ended ? 'ผลถูกบันทึกในแท็บ “สถิติ” แล้ว เริ่มรอบใหม่ได้เลย' : 'ตั้งชื่อรอบนี้ แล้วเปิดห้องให้ผู้เข้าร่วมสแกน QR เข้ามารอ คุณกดเริ่มเมื่อพร้อมให้ตอบ'));
     const title = h('input', { type:'text', id:'sess-title', value:'Workshop ' + new Date().toLocaleDateString('th-TH', { day:'numeric', month:'short', year:'numeric' }) });
     const auto = h('input', { type:'checkbox', id:'sess-auto', checked:true });
     const en = bankQs().filter(q => q.enabled !== false).length;
@@ -413,22 +463,22 @@ function adminLive(){
       h('label', { class:'field', for:'sess-title' }, 'ชื่อกิจกรรม', title),
       h('label', { class:'check' }, auto, h('span', null, 'เปิดเผยผลอัตโนมัติเมื่อทุกคนที่เข้าร่วมตอบครบ', h('span', { class:'small muted', style:'display:block' }, 'ปิดไว้ถ้าอยากกดเปิดเผยเองทุกข้อ'))),
       h('p', { class:'muted' }, 'จะใช้คำถามที่เปิดใช้ ' + en + ' ข้อ จากแท็บ “คำถาม”'),
-      h('div', { class:'actions' }, h('button', { class:'btn primary', type:'button', on:{ click: () => startSession(title.value.trim(), auto.checked) } }, 'เริ่มกิจกรรม'))
+      h('div', { class:'actions' }, h('button', { class:'btn primary', type:'button', on:{ click: () => startSession(title.value.trim(), auto.checked) } }, 'เปิดห้องรอผู้เข้าร่วม'))
     );
     if (S.ui.startErr) frag.append(h('p', { class:'err' }, S.ui.startErr));
     frag.append(h('p', { class:'note' }, 'ส่งลิงก์ของหน้านี้ให้ผู้เข้าร่วมได้เลย ไม่ต้องมีบัญชี'));
     if (S.adminErr) frag.append(h('p', { class:'err' }, S.adminErr));
-    frag.append(joinCard());
     return frag;
   }
   const q = st.questions[st.cur], n = st.questions.length;
-  const joined = cohort().length, ans = answeredCount(q.id), revealed = !!(st.revealed && st.revealed[q.id]);
+  const online = activeIds().size, ans = answeredCount(q.id), ansA = answeredActive(q.id), revealed = !!(st.revealed && st.revealed[q.id]);
   frag.append(h('p', { class:'progress' }, st.title));
   frag.append(h('div', { class:'actions', style:'margin:0 0 10px' }, h('button', { class:'btn sm', type:'button', on:{ click: () => { S.ui.qrFull = true; render(); } } }, 'แสดง QR ให้ผู้เข้าร่วมสแกน')));
   frag.append(h('div', { class:'stat' },
-    h('div', null, h('span', { class:'big' }, joined), h('small', null, 'ผู้เข้าร่วม')),
+    h('div', null, h('span', { class:'big' }, online), h('small', null, 'ออนไลน์อยู่ตอนนี้')),
     h('div', null, h('span', { class:'big' }, ans), h('small', null, 'ตอบข้อนี้แล้ว'))));
-  frag.append(h('div', { class:'meter' }, h('b', { style:'width:' + (joined ? Math.round(100 * ans / joined) : 0) + '%' })));
+  frag.append(h('div', { class:'meter' }, h('b', { style:'width:' + (online ? Math.round(100 * Math.min(ansA, online) / online) : 0) + '%' })));
+  frag.append(h('p', { class:'note', style:'margin-top:8px' }, 'นับเฉพาะคนที่เปิดหน้านี้ค้างไว้และอยู่หน้าจอ ปิดแอปหรือสลับแท็บไปจะไม่นับ (ตอบครบเมื่อ ' + ansA + ' จาก ' + online + ' คนที่ออนไลน์)'));
   frag.append(h('div', { class:'actions' },
     h('button', { class:'btn sm', type:'button', disabled: st.cur === 0, on:{ click: () => adm(() => S.db.doc('live/state').update({ cur: st.cur - 1 })) } }, 'ข้อก่อนหน้า'),
     h('span', { class:'muted' }, 'ข้อ ' + (st.cur + 1) + ' จาก ' + n),
@@ -586,7 +636,7 @@ const TABS = [['live','ควบคุมสด'],['bank','คำถาม'],['s
 function renderNav(){
   $nav.hidden = !(S.isAdmin && S.mode === 'live');
   if ($nav.hidden) return;
-  $nav.replaceChildren(...TABS.map(([k, label]) => h('button', { type:'button', 'aria-current': S.tab === k ? 'page' : null, on:{ click: () => { S.tab = k; S.ui.editId = null; S.ui.confirmEnd = false; S.ui.delQ = S.ui.delA = null; ensureJoined(); render(); } } }, label)));
+  $nav.replaceChildren(...TABS.map(([k, label]) => h('button', { type:'button', 'aria-current': S.tab === k ? 'page' : null, on:{ click: () => { S.tab = k; S.ui.editId = null; S.ui.confirmEnd = false; S.ui.delQ = S.ui.delA = null; ensureJoined(); updatePresence(); render(); } } }, label)));
 }
 function renderStatus(){
   const on = S.mode === 'live';
@@ -621,7 +671,7 @@ function schedule(){
   clearTimeout(timer); timer = setTimeout(render, 120);
 }
 $app.addEventListener('focusout', () => { if (S.pending){ S.pending = false; setTimeout(schedule, 250); } });
-function afterData(){ ensureJoined(); checkAuto(); schedule(); }
+function afterData(){ ensureJoined(); updatePresence(); checkAuto(); schedule(); }
 
 /* ================= เชื่อมต่อ Firebase Realtime Database ================= */
 const arr = x => Array.isArray(x) ? x : (x && typeof x === 'object' ? Object.keys(x).sort((a, b) => a - b).map(k => x[k]) : []);
@@ -695,7 +745,7 @@ function boot(){
     }
     started = true;
     S.uid = u.uid; S.anon = u.isAnonymous; S.dl = true;
-    const db = S.db = mkDb(rdb);
+    const db = S.db = mkDb(rdb); S.rdb = rdb;
     if (!u.isAnonymous){
       try { S.isAdmin = (await rdb.ref('admins/' + u.uid).once('value')).val() === true; } catch (e) { S.isAdmin = false; }
     }
@@ -706,6 +756,14 @@ function boot(){
       const m = {}; snap.docs.forEach(x => { const d = x.data(); if (d) m[x.id] = Object.assign({}, d, { answers: d.answers || {} }); });
       S.votes = m; S.votesReady = true; afterData();
     }, fail);
+    rdb.ref('.info/serverTimeOffset').on('value', x => { S.offset = x.val() || 0; });
+    let wasConn = false;
+    rdb.ref('.info/connected').on('value', x => { const c = x.val() === true; if (c && !wasConn && P.on){ P.key = null; rdb.ref('presence/' + S.uid).onDisconnect().remove(); updatePresence(); } wasConn = c; });
+    db.collection('presence').onSnapshot(snap => {
+      const m = {}; snap.docs.forEach(x => { const d = x.data(); if (d) m[x.id] = d; });
+      S.presence = m; schedule();
+    }, () => {});
+    setInterval(() => { if (S.mode === 'live'){ checkAuto(); schedule(); } }, 10000);
     if (S.isAdmin){
       db.doc('live/bank').onSnapshot(s => {
         const d = s.exists ? s.data() : null;
