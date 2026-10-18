@@ -182,13 +182,13 @@ function mkQ(id, type, part, text, labels, opt){
   const dir = opt.dir || 'hot', total = labels.length + (opt.other ? 1 : 0), heats = heatsFor(total, dir);
   const options = labels.map((label, i) => ({ label, heat:heats[i] }));
   if (opt.other) options.push({ label:opt.otherLabel || OTHER_LABEL, heat:heats[labels.length], other:true });
-  return { id, type, part, text, hint:'', dir, max:opt.max || null, enabled:true, draft:false, benchmark:null, options };
+  return { id, type, part, text, hint:'', dir, max:opt.max || null, lobby:!!opt.lobby, enabled:true, draft:false, benchmark:null, options };
 }
 const P2 = 'ส่วนที่ 2: ข้อมูลทั่วไป', P3 = 'ส่วนที่ 3: มุมมองต่อการเปลี่ยนแปลงสภาพภูมิอากาศ', P4 = 'ส่วนที่ 4: ความตั้งใจในการลงมือปฏิบัติ', P5 = 'ส่วนที่ 5: ข้อคิดเห็นเพิ่มเติม';
 const DEFAULTS = [
-  mkQ('d1', 'single', P2, 'ช่วงอายุ', ['ต่ำกว่า 18 ปี', '18 - 22 ปี', '23 - 25 ปี', '26 ปีขึ้นไป'], { dir:'flat' }),
-  mkQ('d2', 'single', P2, 'เพศ', ['ชาย', 'หญิง', 'ทางเลือก / ไม่ต้องการระบุ'], { dir:'flat' }),
-  mkQ('d3', 'single', P2, 'อาชีพ', ['นิสิต/นักศึกษา', 'ข้าราชการ/พนักงานรัฐวิสาหกิจ', 'พนักงานบริษัทเอกชน', 'ธุรกิจส่วนตัว/ค้าขาย'], { dir:'flat', other:true }),
+  mkQ('d1', 'single', P2, 'ช่วงอายุ', ['ต่ำกว่า 18 ปี', '18 - 22 ปี', '23 - 25 ปี', '26 - 35 ปี', '36 - 45 ปี', '46 - 55 ปี', '56 - 65 ปี', '66 ปีขึ้นไป'], { dir:'flat', lobby:true }),
+  mkQ('d2', 'single', P2, 'เพศ', ['ชาย', 'หญิง', 'ทางเลือก / ไม่ต้องการระบุ'], { dir:'flat', lobby:true }),
+  mkQ('d3', 'single', P2, 'อาชีพ', ['นิสิต/นักศึกษา', 'ข้าราชการ/พนักงานรัฐวิสาหกิจ', 'พนักงานบริษัทเอกชน', 'ธุรกิจส่วนตัว/ค้าขาย'], { dir:'flat', other:true, lobby:true }),
   mkQ('c1', 'single', P3, 'คุณมีความกังวลเกี่ยวกับการเปลี่ยนแปลงสภาพภูมิอากาศมากแค่ไหน?', ['กังวลมากที่สุด', 'กังวลมาก', 'กังวลปานกลาง', 'กังวลน้อย', 'ไม่กังวลเลย']),
   mkQ('c2', 'multi', P3, 'คุณคิดว่าปัญหาใดต่อไปนี้เร่งด่วนที่สุดเกี่ยวกับสภาพภูมิอากาศ?', [
     'สภาพอากาศแปรปรวนสุดขั้วและภัยพิบัติ (เช่น น้ำท่วมรุนแรง, พายุ)', 'ภัยแล้งและการขาดแคลนน้ำ', 'มลพิษทางอากาศและฝุ่นควัน (เช่น PM2.5 จากการเผาในที่โล่ง)',
@@ -442,6 +442,8 @@ function resultBlock(q, counts, o){
 /* ================= มุมมองผู้เข้าร่วม ================= */
 function msgView(title, sub){ return h('div', { class:'centered' }, h('h1', null, title), sub ? h('p', { class:'hint' }, sub) : null); }
 
+const mainIdx = st => st.questions.map((q, i) => q.lobby ? -1 : i).filter(i => i >= 0);
+const mainPos = st => Math.max(0, mainIdx(st).indexOf(st.cur));
 const needConsent = st => !!(st && st.consent && st.consent.body);
 const consented = st => !!(st && S.myConsent && S.myConsent.sid === st.sid);
 function giveConsent(){
@@ -473,7 +475,7 @@ function draftOf(q){
   return S.ui.draft[k];
 }
 function saveText(key, v){
-  if (!S.state || S.state.status !== 'active' || !v) return;
+  if (!S.state || !(S.state.status === 'active' || S.state.status === 'lobby') || !v) return;
   const sid = S.state.sid, text = String(v).slice(0, 1000);
   S.chain = S.chain.then(() => S.db.doc('texts/' + S.uid + '/' + key).set({ sid, v:text })).catch(() => { S.saveErr = true; schedule(); });
 }
@@ -531,13 +533,22 @@ function inputControls(q, mine){
   return wrap;
 }
 
+function lobbyView(st){
+  const lq = st.questions.filter(q => q.lobby), online = Math.max(activeIds().size, 1);
+  if (!lq.length) return msgView('รอผู้ดำเนินกิจกรรมเริ่ม', 'คุณอยู่ในห้องแล้ว ตอนนี้มีคนออนไลน์ ' + online + ' คน คำถามข้อแรกจะขึ้นเองเมื่อพร้อม');
+  const done = lq.filter(q => hasAnswer(myAnswer(q.id))).length, frag = document.createDocumentFragment();
+  frag.append(h('h1', null, 'ระหว่างรอเริ่ม ขอข้อมูลทั่วไปสั้นๆ'),
+    h('p', { class:'hint' }, 'ตอบแล้ว ' + done + ' จาก ' + lq.length + ' ข้อ ข้ามข้อที่ไม่สะดวกตอบได้ ตอนนี้มีคนออนไลน์ ' + online + ' คน'));
+  lq.forEach(q => frag.append(h('h2', null, q.text), h('p', { class:'hint', style:'margin-bottom:12px' }, qHint(q)), inputControls(q, myAnswer(q.id))));
+  frag.append(h('div', { class:'sent', 'aria-live':'polite' }, done === lq.length ? 'ขอบคุณ ตอบครบแล้ว รอผู้ดำเนินกิจกรรมกดเริ่ม คำถามข้อแรกจะขึ้นเองเมื่อพร้อม' : 'ตอบเสร็จแล้ววางหน้านี้ไว้ได้เลย เมื่อผู้ดำเนินกิจกรรมกดเริ่ม คำถามข้อแรกจะขึ้นเอง'));
+  if (S.saveErr) frag.append(h('p', { class:'err' }, 'บันทึกคำตอบไม่สำเร็จ ลองอีกครั้ง'));
+  return frag;
+}
+
 function participantView(){
   const st = S.state;
   if (st && (st.status === 'lobby' || st.status === 'active') && needConsent(st) && !consented(st)) return consentView(st);
-  if (st && st.status === 'lobby'){
-    const online = activeIds().size;
-    return msgView('รอผู้ดำเนินกิจกรรมเริ่ม', 'คุณอยู่ในห้องแล้ว ตอนนี้มีคนออนไลน์ ' + Math.max(online, 1) + ' คน คำถามข้อแรกจะขึ้นเองเมื่อพร้อม');
-  }
+  if (st && st.status === 'lobby') return lobbyView(st);
   if (!st || st.status === 'idle') return msgView('รอผู้ดำเนินกิจกรรมเริ่ม', 'หน้านี้จะเปลี่ยนเป็นคำถามข้อแรกเองเมื่อพร้อม');
   if (st.status === 'ended'){
     const frag = document.createDocumentFragment();
@@ -553,7 +564,7 @@ function participantView(){
   const q = st.questions[st.cur];
   const revealed = !!(st.revealed && st.revealed[q.id]);
   const frag = document.createDocumentFragment();
-  frag.append(h('p', { class:'progress' }, progressLine(q, st.cur, st.questions.length)), h('h1', null, q.text));
+  frag.append(h('p', { class:'progress' }, progressLine(q, mainPos(st), mainIdx(st).length)), h('h1', null, q.text));
   const mine = myAnswer(q.id);
   if (revealed){
     const tl = tally(q);
@@ -585,7 +596,9 @@ function saveMine(){
     .catch(() => { S.saveErr = true; schedule(); });
 }
 function answer(qid, i){
-  if (!S.state || S.state.status !== 'active' || (needConsent(S.state) && !consented(S.state))) return;
+  const st = S.state; if (!st) return;
+  const q = st.questions.find(x => x.id === qid);
+  if (!(st.status === 'active' || (st.status === 'lobby' && q && q.lobby)) || (needConsent(st) && !consented(st))) return;
   if (!S.mine || S.mine.sid !== S.state.sid) S.mine = { sid:S.state.sid, answers:{} };
   S.mine = { sid:S.mine.sid, answers:Object.assign({}, S.mine.answers, { [qid]: i }) };
   S.votes = Object.assign({}, S.votes, { [S.uid]: { sid:S.mine.sid, answers:S.mine.answers } });
@@ -593,7 +606,7 @@ function answer(qid, i){
 }
 function ensureJoined(){
   const st = S.state;
-  if (!S.votesReady || !S.stateReady || !st || st.status !== 'active' || S.joinedSid === st.sid) return;
+  if (!S.votesReady || !S.stateReady || !st || !(st.status === 'active' || st.status === 'lobby') || S.joinedSid === st.sid) return;
   if (S.isAdmin && S.tab !== 'participant') return;
   S.joinedSid = st.sid;
   const mv = S.votes[S.uid];
@@ -608,14 +621,15 @@ async function adm(fn){
   render();
 }
 function startSession(title, auto, consent, consentOn){
-  const qs = bankQs().filter(q => q.enabled !== false).map(q => ({ id:q.id, type:q.type || 'single', max:q.max || null, part:q.part || null, text:q.text, hint:q.hint || '', options:q.options || [], benchmark:q.benchmark || null }));
-  if (!qs.length){ S.ui.startErr = 'เปิดใช้คำถามอย่างน้อย 1 ข้อในแท็บ “คำถาม” ก่อน'; render(); return; }
+  const qs = bankQs().filter(q => q.enabled !== false).map(q => ({ id:q.id, type:q.type || 'single', max:q.max || null, part:q.part || null, lobby:!!q.lobby, text:q.text, hint:q.hint || '', options:q.options || [], benchmark:q.benchmark || null }));
+  const mains = qs.map((q, i) => q.lobby ? -1 : i).filter(i => i >= 0);
+  if (!mains.length){ S.ui.startErr = 'ต้องมีคำถามหลักที่ไม่ใช่ “ถามในห้องรอ” อย่างน้อย 1 ข้อ (แท็บ “คำถาม”)'; render(); return; }
   if (consent && (!consent.body || /\[ใส่/.test(consent.title + consent.body))){ S.ui.startErr = 'แก้ข้อความ “[ใส่…]” ในหน้าขอความยินยอมให้เรียบร้อยก่อนเริ่ม'; render(); return; }
   S.ui.startErr = '';
   adm(async () => {
     const cfg = { title:title || 'Workshop', auto:!!auto, consentOn:!!consentOn };
     if (consent){ cfg.consentTitle = consent.title; cfg.consentBody = consent.body; }
-    await S.db.doc('live/state').set({ sid:uidNew('s'), status:'lobby', title:title || 'Workshop', questions:qs, cur:0, revealed:{}, auto:!!auto, consent: consent || null });
+    await S.db.doc('live/state').set({ sid:uidNew('s'), status:'lobby', title:title || 'Workshop', questions:qs, cur:mains[0], revealed:{}, auto:!!auto, consent: consent || null });
     try { await S.db.doc('live/bank').update({ settings:cfg }); S.settings = Object.assign({}, S.settings, cfg); } catch (e) {}
   });
 }
@@ -731,6 +745,11 @@ function adminLive(){
       h('button', { class:'btn danger' + (S.ui.confirmCancel ? ' sure' : ''), type:'button', on:{ click: () => { if (S.ui.confirmCancel){ S.ui.confirmCancel = false; adm(() => S.db.doc('live/state').set({ status:'idle' })); } else { S.ui.confirmCancel = true; render(); } } } }, S.ui.confirmCancel ? 'ยืนยัน ยกเลิกรอบนี้' : 'ยกเลิกรอบนี้'),
       S.ui.confirmCancel ? h('button', { class:'btn sm', type:'button', on:{ click: () => { S.ui.confirmCancel = false; render(); } } }, 'ไม่ยกเลิก') : null));
     if (S.adminErr) frag.append(h('p', { class:'err' }, S.adminErr));
+    const lq = st.questions.filter(q => q.lobby);
+    if (lq.length){
+      frag.append(h('h2', null, 'ข้อมูลทั่วไปที่ผู้เข้าร่วมตอบแล้ว'));
+      lq.forEach(q => { const tl = tally(q); frag.append(h('p', { style:'margin:16px 0 0;font-weight:500' }, q.text, h('span', { class:'muted small' }, '  (' + tl.total + ' คน)')), q.type === 'text' ? null : resultBlock(q, tl.counts, { kind:'bars', total:tl.total })); });
+    }
     frag.append(joinCard());
     return frag;
   }
@@ -765,7 +784,7 @@ function adminLive(){
     if (S.adminErr) frag.append(h('p', { class:'err' }, S.adminErr));
     return frag;
   }
-  const q = st.questions[st.cur], n = st.questions.length;
+  const q = st.questions[st.cur], mains = mainIdx(st), pos = mainPos(st), n = mains.length;
   const online = activeIds().size, ans = answeredCount(q.id), ansA = answeredActive(q.id), revealed = !!(st.revealed && st.revealed[q.id]);
   frag.append(h('p', { class:'progress' }, st.title));
   frag.append(h('div', { class:'actions', style:'margin:0 0 10px' }, h('button', { class:'btn sm', type:'button', on:{ click: () => { S.ui.qrFull = true; render(); } } }, 'แสดง QR ให้ผู้เข้าร่วมสแกน')));
@@ -775,9 +794,9 @@ function adminLive(){
   frag.append(h('div', { class:'meter' }, h('b', { style:'width:' + (online ? Math.round(100 * Math.min(ansA, online) / online) : 0) + '%' })));
   frag.append(h('p', { class:'note', style:'margin-top:8px' }, 'นับเฉพาะคนที่เปิดหน้านี้ค้างไว้และอยู่หน้าจอ ปิดแอปหรือสลับแท็บไปจะไม่นับ (ตอบครบเมื่อ ' + ansA + ' จาก ' + online + ' คนที่ออนไลน์)'));
   frag.append(h('div', { class:'actions' },
-    h('button', { class:'btn sm', type:'button', disabled: st.cur === 0, on:{ click: () => adm(() => S.db.doc('live/state').update({ cur: st.cur - 1 })) } }, 'ข้อก่อนหน้า'),
-    h('span', { class:'muted' }, 'ข้อ ' + (st.cur + 1) + ' จาก ' + n),
-    h('button', { class:'btn sm', type:'button', disabled: st.cur >= n - 1, on:{ click: () => adm(() => S.db.doc('live/state').update({ cur: st.cur + 1 })) } }, 'ข้อถัดไป')));
+    h('button', { class:'btn sm', type:'button', disabled: pos <= 0, on:{ click: () => adm(() => S.db.doc('live/state').update({ cur: mains[pos - 1] })) } }, 'ข้อก่อนหน้า'),
+    h('span', { class:'muted' }, 'ข้อ ' + (pos + 1) + ' จาก ' + n),
+    h('button', { class:'btn sm', type:'button', disabled: pos >= n - 1, on:{ click: () => adm(() => S.db.doc('live/state').update({ cur: mains[pos + 1] })) } }, 'ข้อถัดไป')));
   frag.append(h('h2', null, q.text));
   frag.append(h('div', { class:'actions', style:'margin-top:0' },
     h('button', { class:'btn primary', type:'button', on:{ click: () => adm(() => S.db.doc('live/state').update({ revealed:{ [q.id]: !revealed } })) } }, revealed ? 'ซ่อนผลจากผู้เข้าร่วม' : 'เปิดเผยผลให้ทุกคน')));
@@ -811,7 +830,7 @@ function exportSettings(withStats){
   const data = {
     app:'climate-voice', version:2, exportedAt:new Date().toISOString(),
     settings:{ title:(S.settings && S.settings.title) || '', auto: S.settings ? S.settings.auto !== false : true, consentOn: S.settings ? S.settings.consentOn !== false : true, consentTitle:(S.settings && S.settings.consentTitle) || '', consentBody:(S.settings && S.settings.consentBody) || '' },
-    questions: bankQs().map(q => ({ id:q.id, type:q.type || 'single', max:q.max || null, part:q.part || '', text:q.text, hint:q.hint || '', options:q.options.map(o => o.other ? { label:o.label, other:true } : { label:o.label }), dir:q.dir || 'hot', benchmark:q.benchmark || null, enabled:q.enabled !== false, draft:q.draft !== false }))
+    questions: bankQs().map(q => ({ id:q.id, type:q.type || 'single', max:q.max || null, part:q.part || '', lobby:q.lobby === true, text:q.text, hint:q.hint || '', options:q.options.map(o => o.other ? { label:o.label, other:true } : { label:o.label }), dir:q.dir || 'hot', benchmark:q.benchmark || null, enabled:q.enabled !== false, draft:q.draft !== false }))
   };
   if (withStats) data.archive = S.archive;
   saveFile('climate-voice-settings-' + new Date().toISOString().slice(0, 10) + '.json', JSON.stringify(data, null, 2), 'application/json');
@@ -839,7 +858,7 @@ function parseImport(text){
     let id = SAFE_ID.test(String(q.id)) ? String(q.id) : uidNew('c'); if (ids.has(id)) id = uidNew('c'); ids.add(id);
     const options = type === 'text' ? [] : labels.map((label, i) => ({ label, heat:heats[i] }));
     if (type !== 'text' && other) options.push({ label:other, heat:heats[labels.length], other:true });
-    questions.push({ id, type, max: type === 'multi' && Number.isInteger(q.max) && q.max >= 1 && q.max <= 8 ? q.max : null, part:String(q.part || '').trim().slice(0, 100) || null, text:t, hint:String(q.hint || '').slice(0, 200), dir, enabled:q.enabled !== false, draft:q.draft !== false, benchmark: type === 'text' ? null : cleanBench(q.benchmark, options.length), options });
+    questions.push({ id, type, max: type === 'multi' && Number.isInteger(q.max) && q.max >= 1 && q.max <= 8 ? q.max : null, part:String(q.part || '').trim().slice(0, 100) || null, lobby:q.lobby === true, text:t, hint:String(q.hint || '').slice(0, 200), dir, enabled:q.enabled !== false, draft:q.draft !== false, benchmark: type === 'text' ? null : cleanBench(q.benchmark, options.length), options });
   });
   const settings = d.settings && typeof d.settings === 'object' ? { title:String(d.settings.title || '').slice(0, 120), auto:d.settings.auto !== false, consentOn:d.settings.consentOn !== false, consentTitle:String(d.settings.consentTitle || '').slice(0, 200), consentBody:String(d.settings.consentBody || '').slice(0, 5000) } : null;
   const archive = [];
@@ -928,7 +947,7 @@ function adminBank(){
   qs.forEach((q, i) => {
     if (S.ui.editId === q.id){ frag.append(qForm(q, i, qs)); return; }
     frag.append(h('div', { class:'qitem' },
-      h('div', null, h('b', null, (i + 1) + '. ' + q.text), h('span', { class:'tag off' }, q.type === 'multi' ? 'เลือกหลายข้อ' + (q.max ? ' สูงสุด ' + q.max : '') : q.type === 'text' ? 'พิมพ์ตอบ' : 'เลือกข้อเดียว'), q.draft ? h('span', { class:'tag' }, 'ร่าง ยังไม่ตรวจต้นฉบับ') : null, q.enabled === false ? h('span', { class:'tag off' }, 'ไม่ใช้') : null),
+      h('div', null, h('b', null, (i + 1) + '. ' + q.text), h('span', { class:'tag off' }, q.type === 'multi' ? 'เลือกหลายข้อ' + (q.max ? ' สูงสุด ' + q.max : '') : q.type === 'text' ? 'พิมพ์ตอบ' : 'เลือกข้อเดียว'), q.lobby ? h('span', { class:'tag off' }, 'ถามในห้องรอ') : null, q.draft ? h('span', { class:'tag' }, 'ร่าง ยังไม่ตรวจต้นฉบับ') : null, q.enabled === false ? h('span', { class:'tag off' }, 'ไม่ใช้') : null),
       h('p', { class:'opts' }, (q.part ? q.part + ' · ' : '') + (q.type === 'text' ? 'ช่องพิมพ์ข้อความ' : q.options.map(o => o.label).join(' / ')) + (q.benchmark ? '  (มีค่าอ้างอิงทั่วโลก)' : '')),
       h('div', { class:'actions', style:'margin-top:8px' },
         h('button', { class:'btn sm', type:'button', on:{ click: () => { S.ui.editId = q.id; S.ui.formErr = ''; render(); } } }, 'แก้ไข'),
@@ -961,6 +980,7 @@ function qForm(q, idx, qs){
     h('option', { value:'flat', selected: !!q && q.dir === 'flat' }, 'สีเดียว (เหมาะกับตัวเลือกที่ไม่ใช่ระดับ เช่น อาชีพ ประเด็น)'));
   const bench = h('input', { type:'text', id:'f-bench', value: q && q.benchmark ? q.benchmark.join(', ') : '', placeholder:'เช่น 56, 20, 12, 7, 3, 2' });
   const ver = h('input', { type:'checkbox', id:'f-ver', checked: !!q && !q.draft });
+  const lobbyCb = h('input', { type:'checkbox', id:'f-lobby', checked: !!q && q.lobby === true });
   const en = h('input', { type:'checkbox', id:'f-en', checked: !q || q.enabled !== false });
   const err = h('p', { class:'err', 'aria-live':'polite' }, S.ui.formErr || '');
   const fMax = h('label', { class:'field', for:'f-max' }, 'จำนวนที่เลือกได้', max);
@@ -987,7 +1007,7 @@ function qForm(q, idx, qs){
         if (b.length !== options.length || b.some(x => !isFinite(x) || x < 0 || x > 100)) return fail('ค่าอ้างอิงทั่วโลกต้องมี ' + options.length + ' ค่า (0–100) เท่ากับจำนวนตัวเลือก');
       }
     }
-    const item = { id: q ? q.id : uidNew('c'), type:ty, text:t, hint:'', part:part.value.trim() || null, dir: ty === 'text' ? 'flat' : dir.value, max: ty === 'multi' && max.value ? Number(max.value) : null, enabled:en.checked, draft:!ver.checked, benchmark:b, options };
+    const item = { id: q ? q.id : uidNew('c'), type:ty, text:t, hint:'', part:part.value.trim() || null, dir: ty === 'text' ? 'flat' : dir.value, max: ty === 'multi' && max.value ? Number(max.value) : null, lobby:lobbyCb.checked, enabled:en.checked, draft:!ver.checked, benchmark:b, options };
     const a = clone(qs); if (isNew) a.push(item); else a[idx] = item;
     saveBank(a);
   };
@@ -997,6 +1017,7 @@ function qForm(q, idx, qs){
     h('label', { class:'field', for:'f-part' }, 'หัวข้อส่วน (ไม่บังคับ)', part),
     fMax, fOpts, fOther, fDir, fBench,
     h('label', { class:'check' }, ver, h('span', null, 'ตรวจถ้อยคำแล้ว (เอาป้าย “ร่าง” ออก)')),
+    h('label', { class:'check' }, lobbyCb, h('span', null, 'ถามในห้องรอ (ก่อนแอดมินกดเริ่ม)', h('span', { class:'small muted', style:'display:block' }, 'เหมาะกับข้อมูลทั่วไป เช่น อายุ เพศ อาชีพ ผู้เข้าร่วมตอบระหว่างรอ และไม่ถูกนับเป็นข้อในขั้นตอนหลัก'))),
     h('label', { class:'check' }, en, h('span', null, 'ใช้ในกิจกรรมรอบถัดไป')),
     err,
     h('div', { class:'actions' },
@@ -1043,13 +1064,13 @@ function aggregate(){
   S.archive.forEach(a => a.questions.forEach(q => {
     const cs = q.counts || [];
     let m = map.get(q.id);
-    if (!m){ m = { q, counts:new Array(cs.length).fill(0), total:0, withText:0, sessions:0, texts:[] }; map.set(q.id, m); }
-    if (m.counts.length === cs.length){
+    if (!m){ m = { q, counts:new Array(cs.length).fill(0), total:0, withText:0, sessions:0, texts:[], skipped:0 }; map.set(q.id, m); }
+    if (sameOpts(m.q.options, q.options) && m.counts.length === cs.length){
       cs.forEach((c, i) => { m.counts[i] += c; });
       m.total += q.total != null ? q.total : cs.reduce((x, y) => x + y, 0);
       m.withText += q.withText || 0; m.sessions++;
       if (q.type === 'text') m.texts = m.texts.concat(q.texts || []).slice(0, 1000);
-    }
+    } else m.skipped++;
   }));
   return [...map.values()];
 }
@@ -1073,22 +1094,30 @@ function respondentsCsv(list){
   });
   return csvText(rows);
 }
+function sameOpts(a, b){ return !!a && !!b && a.length === b.length && a.every((o, i) => o.label === b[i].label); }
 function crossCompute(gid, scope, withR){
   const list = withR.filter(a => scope === 'all' || a.sid === scope);
   const defs = new Map(); list.forEach(a => a.questions.forEach(q => { if (!defs.has(q.id)) defs.set(q.id, q); }));
   const g = defs.get(gid); if (!g) return null;
-  const recs = []; list.forEach(a => a.responses.forEach(r => recs.push(r)));
+  /* รวมเฉพาะกิจกรรมที่ตัวเลือกตรงกับปัจจุบัน กันเลขลำดับตัวเลือกสลับความหมายเมื่อเคยเปลี่ยนการแบ่งกลุ่ม */
+  const recs = []; let skipped = 0;
+  list.forEach(a => {
+    const aq = new Map(a.questions.map(q => [q.id, q]));
+    if (!sameOpts((aq.get(gid) || {}).options, g.options)){ skipped++; return; }
+    const okIds = new Set(); aq.forEach((q, id) => { const d = defs.get(id); if (d && sameOpts(q.options, d.options)) okIds.add(id); });
+    a.responses.forEach(r => recs.push({ r, okIds }));
+  });
   const groups = g.options.map(() => ({ n:0, recs:[] }));
-  recs.forEach(r => { const x = r[gid]; if (Number.isInteger(x) && groups[x]){ groups[x].n++; groups[x].recs.push(r); } });
+  recs.forEach(x => { const v = x.r[gid]; if (Number.isInteger(v) && groups[v]){ groups[v].n++; groups[v].recs.push(x); } });
   const rows = [];
   defs.forEach(q => {
     if (q.id === gid || q.type === 'text') return;
     rows.push({ q, cells: groups.map(gr => {
-      const ans = gr.recs.filter(r => hasAnswer(r[q.id]));
-      return { nAns:ans.length, counts:q.options.map((_, i) => ans.filter(r => q.type === 'multi' ? arr(r[q.id]).includes(i) : r[q.id] === i).length) };
+      const ans = gr.recs.filter(x => x.okIds.has(q.id) && hasAnswer(x.r[q.id]));
+      return { nAns:ans.length, counts:q.options.map((_, k) => ans.filter(x => q.type === 'multi' ? arr(x.r[q.id]).includes(k) : x.r[q.id] === k).length) };
     }) });
   });
-  return { g, groups, rows, total:recs.length };
+  return { g, groups, rows, total:recs.length, skipped };
 }
 function crossView(){
   const box = h('div', null, h('h2', null, 'ดูผลแยกตามกลุ่ม'));
@@ -1105,7 +1134,7 @@ function crossView(){
   ss.addEventListener('change', () => { S.ui.xs = ss.value; render(); });
   box.append(h('label', { class:'field', for:'x-g' }, 'แยกตามคำถาม', sg), h('label', { class:'field', for:'x-s' }, 'ข้อมูลจาก', ss));
   const r = crossCompute(S.ui.xg, S.ui.xs, withR); if (!r) return box;
-  box.append(h('p', { class:'muted small' }, 'ผู้ตอบข้อ “' + r.g.text + '” ' + r.groups.reduce((x, y) => x + y.n, 0) + ' คน ตัวเลขในตารางเป็นร้อยละของคนในกลุ่มนั้นที่ตอบข้อนั้น'));
+  box.append(h('p', { class:'muted small' }, 'ผู้ตอบข้อ “' + r.g.text + '” ' + r.groups.reduce((x, y) => x + y.n, 0) + ' คน ตัวเลขในตารางเป็นร้อยละของคนในกลุ่มนั้นที่ตอบข้อนั้น' + (r.skipped ? ' (ไม่รวม ' + r.skipped + ' กิจกรรมที่ตัวเลือกของข้อนี้ต่างจากปัจจุบัน)' : '')));
   r.rows.forEach(row => {
     const tbl = h('table', { class:'xt' },
       h('thead', null, h('tr', null, h('th', null, ''), r.groups.map((gr, gi) => h('th', null, r.g.options[gi].label, h('small', null, 'n = ' + gr.n + (gr.n < 5 ? ' *' : '')))))),
@@ -1147,7 +1176,11 @@ function adminStats(){
   if (S.ui.dlMsg) frag.append(h('p', { class:'err' }, S.ui.dlMsg));
 
   frag.append(h('h2', null, 'ภาพรวมสะสม'));
-  aggregate().forEach(m => frag.append(qStat(m.q, m.counts, m.total, m.withText, m.texts)));
+  aggregate().forEach(m => {
+    const el = qStat(m.q, m.counts, m.total, m.withText, m.texts);
+    if (m.skipped) el.append(h('p', { class:'note' }, 'ไม่รวม ' + m.skipped + ' กิจกรรมที่ตัวเลือกของข้อนี้ต่างจากปัจจุบัน (เช่น เคยแบ่งช่วงอายุไม่เหมือนกัน)'));
+    frag.append(el);
+  });
   frag.append(crossView());
 
   frag.append(h('h2', null, 'รายกิจกรรม'));
