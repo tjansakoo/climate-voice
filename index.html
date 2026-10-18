@@ -646,7 +646,7 @@ function startSession(title, auto, consent, consentOn){
   adm(async () => {
     const cfg = { title:title || 'Workshop', auto:!!auto, consentOn:!!consentOn };
     if (consent){ cfg.consentTitle = consent.title; cfg.consentBody = consent.body; }
-    await S.db.doc('live/state').set({ sid:uidNew('s'), status:'lobby', title:title || 'Workshop', questions:qs, cur:mains[0], revealed:{}, auto:!!auto, consent: consent || null });
+    await S.db.doc('live/state').set({ sid:uidNew('s'), status:'lobby', title:title || 'Workshop', questions:qs, cur:mains[0], revealed:{}, board:{ mode:'live' }, auto:!!auto, consent: consent || null });
     try { await S.db.doc('live/bank').update({ settings:cfg }); S.settings = Object.assign({}, S.settings, cfg); } catch (e) {}
   });
 }
@@ -765,7 +765,19 @@ function boardView(){
   const st = S.state, frag = document.createDocumentFragment();
   frag.append(h('div', { class:'board-top' }, h('div', { class:'brand' }, 'เสียงของเรา'), h('div', { class:'muted' }, st && st.title ? st.title : '')));
   if (!st || st.status === 'idle'){ frag.append(msgView('รอผู้ดำเนินกิจกรรมเริ่ม', 'หน้านี้จะแสดงผลทีละข้อเมื่อกิจกรรมเริ่ม')); return frag; }
-  if (st.status === 'lobby'){
+  const bc = st.board || { mode:'live' };
+  if (bc.mode === 'blank'){ frag.append(h('div', { class:'centered' }, h('h1', null, st.title || 'เสียงของเรา'), h('p', { class:'hint' }, 'พักสักครู่'))); return frag; }
+  if (bc.mode === 'q'){
+    const fq = st.questions.find(x => x.id === bc.qid);
+    if (fq){
+      const ftl = tally(fq), mi = mainIdx(st), mp = mi.indexOf(st.questions.indexOf(fq));
+      const fbox = h('div', null, h('p', { class:'progress' }, fq.lobby ? (fq.part || 'ข้อมูลทั่วไป') : progressLine(fq, mp, mi.length)), h('h1', null, fq.text));
+      if (fq.type === 'text'){ fbox.append(h('p', { class:'total' }, 'มีผู้ร่วมแสดงความเห็น ' + ftl.withText + ' คน')); const pc = publicCloud(fq, st); if (pc) fbox.append(pc); }
+      else fbox.append(h('p', { class:'total', 'aria-live':'polite' }, 'ตอบแล้ว ' + ftl.total + ' คน'), resultBlock(fq, ftl.counts, { total:ftl.total, scale:1.5, key:'board-' + st.sid + fq.id }));
+      frag.append(fbox); return frag;
+    }
+  }
+  if (bc.mode === 'qr' || st.status === 'lobby'){
     const url = joinUrl().split('#')[0];
     frag.append(h('div', { class:'qrfull' }, h('h1', null, 'สแกนเพื่อเข้าร่วม'), h('div', { class:'qrbox' }, qrNode(url)), h('p', { class:'qrurl' }, url), h('p', { class:'total', 'aria-live':'polite' }, 'ออนไลน์อยู่ ' + activeIds().size + ' คน')));
     return frag;
@@ -796,6 +808,32 @@ function boardView(){
     live ? h('span', { class:'live-badge' }, '● ถ่ายทอดสด') : (st.status === 'active' ? h('button', { class:'btn primary', type:'button', on:{ click: () => { S.ui.bFollow = true; S.ui.bPos = null; render(); } } }, 'กลับไปตามสด') : null)));
   return frag;
 }
+function boardGate(){
+  return h('div', null,
+    h('div', { class:'board-top' }, h('div', { class:'brand' }, 'เสียงของเรา')),
+    h('p', { class:'hint' }, 'หน้า Broadcast เปิดได้เฉพาะผู้ดำเนินกิจกรรม' + (S.anon ? '' : ' บัญชีที่เข้าสู่ระบบอยู่ไม่ใช่ผู้ดำเนินกิจกรรม')),
+    loginView(true));
+}
+function setBoard(mode, qid){ adm(() => S.db.doc('live/state').update({ board:{ mode, qid: qid || null } })); }
+function boardControl(st){
+  const b = st.board || { mode:'live' };
+  const curQ = st.questions[st.cur], pick = b.qid || (curQ && curQ.id);
+  const sel = h('select', { id:'b-q', 'aria-label':'เลือกข้อที่จะแสดงบนจอ' }, st.questions.map((q, i) => h('option', { value:q.id, selected: q.id === pick }, (q.lobby ? '[ห้องรอ] ' : '') + (i + 1) + '. ' + q.text.slice(0, 70))));
+  const warn = h('p', { class:'note', style:'margin-top:6px' }, '');
+  const upd = () => { const q = st.questions.find(x => x.id === sel.value); warn.textContent = q && !q.lobby && !(st.revealed && st.revealed[q.id]) ? 'ข้อนี้ยังไม่ได้เปิดเผยให้ผู้เข้าร่วม ถ้าแสดงบนจอ ทุกคนที่ดูหน้า Broadcast จะเห็นผลก่อน' : ''; };
+  sel.addEventListener('change', upd); upd();
+  const label = b.mode === 'qr' ? 'แสดง QR เข้าร่วม' : b.mode === 'blank' ? 'พักจอ' : b.mode === 'q' ? 'แสดงผลข้อที่เลือก: ' + ((st.questions.find(x => x.id === b.qid) || {}).text || '') : 'ตามสด (ข้อปัจจุบัน)';
+  const mk = (txt, mode) => h('button', { class:'btn sm' + (b.mode === mode ? ' primary' : ''), type:'button', on:{ click: () => setBoard(mode) } }, txt);
+  const d = h('details', { open: !!S.ui.bcOpen, style:'margin-top:16px' },
+    h('summary', null, 'ควบคุมจอ Broadcast (ตอนนี้: ' + label.slice(0, 60) + ')'),
+    h('div', { class:'actions' }, mk('ตามสด', 'live'), mk('แสดง QR เข้าร่วม', 'qr'), mk('พักจอ', 'blank')),
+    h('label', { class:'field', for:'b-q', style:'margin-top:12px' }, 'หรือเลือกข้อที่จะแสดงผลบนจอ', sel),
+    h('div', { class:'actions', style:'margin-top:0' }, h('button', { class:'btn sm' + (b.mode === 'q' ? ' primary' : ''), type:'button', on:{ click: () => setBoard('q', sel.value) } }, 'แสดงผลข้อนี้บนจอ')),
+    warn,
+    h('p', { class:'note' }, 'จอ Broadcast จะค้างตามที่เลือกจนกว่าจะกด “ตามสด” หน้าจอผู้เข้าร่วมไม่เปลี่ยนตาม'));
+  d.addEventListener('toggle', () => { S.ui.bcOpen = d.open; });
+  return d;
+}
 function boardCard(){
   const row = (live, title, desc) => {
     const url = boardUrl(live), copy = h('button', { class:'btn sm', type:'button' }, 'คัดลอกลิงก์');
@@ -805,7 +843,7 @@ function boardCard(){
   };
   return h('div', { class:'qrcard' },
     h('h2', null, 'หน้า Broadcast สำหรับฉายให้ทุกคนดู'),
-    h('p', { class:'hint' }, 'จอใหญ่ที่ขึ้น QR ตอนรอ และแสดงผลทีละข้อตามที่คุณเปิดเผย ไม่นับเป็นผู้เข้าร่วม'),
+    h('p', { class:'hint' }, 'จอใหญ่ที่ขึ้น QR ตอนรอ และแสดงผลทีละข้อตามที่คุณเปิดเผย เปิดได้เฉพาะเมื่อเข้าสู่ระบบผู้ดำเนินกิจกรรม (ถ้าเปิดบนเครื่องอื่น ต้องล็อกอินที่เครื่องนั้นก่อน) ไม่นับเป็นผู้เข้าร่วม'),
     row(false, 'แบบเลื่อนดูได้', 'ผู้ชมกดย้อนดูข้อก่อนหน้าได้ (ปุ่มหรือลูกศรซ้าย/ขวา) และกลับไปตามสดได้'),
     row(true, 'แบบตามสดอย่างเดียว', 'ไม่มีปุ่มเลื่อน ผู้ชมเปลี่ยนข้อเองไม่ได้ เหมาะกับจอใหญ่หน้าห้อง'));
 }
@@ -832,6 +870,7 @@ function adminLive(){
     }
     frag.append(joinCard());
     frag.append(boardCard());
+    frag.append(boardControl(st));
     return frag;
   }
   if (!st || st.status !== 'active'){
@@ -869,6 +908,7 @@ function adminLive(){
   const online = activeIds().size, ans = answeredCount(q.id), ansA = answeredActive(q.id), revealed = !!(st.revealed && st.revealed[q.id]);
   frag.append(h('p', { class:'progress' }, st.title));
   frag.append(h('div', { class:'actions', style:'margin:0 0 10px' }, h('button', { class:'btn sm', type:'button', on:{ click: () => { S.ui.qrFull = true; render(); } } }, 'แสดง QR ให้ผู้เข้าร่วมสแกน'), h('button', { class:'btn sm', type:'button', on:{ click: () => window.open(boardUrl(), '_blank') } }, 'Broadcast (เลื่อนดูได้)'), h('button', { class:'btn sm', type:'button', on:{ click: () => window.open(boardUrl(true), '_blank') } }, 'Broadcast (ตามสดอย่างเดียว)')));
+  frag.append(boardControl(st));
   frag.append(h('div', { class:'stat' },
     h('div', null, h('span', { class:'big' }, online), h('small', null, 'ออนไลน์อยู่ตอนนี้')),
     h('div', null, h('span', { class:'big' }, ans), h('small', null, 'ตอบข้อนี้แล้ว'))));
@@ -1315,7 +1355,11 @@ function renderFoot(){
 }
 function render(){
   renderStatus(); renderNav(); renderFoot();
-  if (S.board && S.mode === 'live' && S.stateReady && S.votesReady){ $nav.hidden = true; $app.replaceChildren(boardView()); return; }
+  if (S.board && S.mode === 'live'){
+    $nav.hidden = true;
+    if (!S.isAdmin){ $app.replaceChildren(boardGate()); return; }
+    if (S.stateReady && S.votesReady){ $app.replaceChildren(boardView()); return; }
+  }
   if (S.ui.qrFull && S.isAdmin && S.mode === 'live'){ $nav.hidden = true; $app.replaceChildren(qrFullView()); return; }
   if (S.ui.login && S.mode === 'live'){ $nav.hidden = true; $app.replaceChildren(loginView()); return; }
   let v;
@@ -1346,7 +1390,7 @@ function normQ(q){
   if (q.counts) q.counts = arr(q.counts);
   return q;
 }
-const normState = d => d ? Object.assign({}, d, { questions: arr(d.questions).filter(Boolean).map(normQ), revealed: d.revealed || {}, cloud: Object.fromEntries(Object.entries(d.cloud || {}).map(([k, v]) => [k, arr(v).filter(x => x && typeof x.w === 'string').map(x => [x.w, Number(x.c) || 1])])) }) : null;
+const normState = d => d ? Object.assign({}, d, { questions: arr(d.questions).filter(Boolean).map(normQ), revealed: d.revealed || {}, board: d.board && typeof d.board === 'object' ? d.board : { mode:'live' }, cloud: Object.fromEntries(Object.entries(d.cloud || {}).map(([k, v]) => [k, arr(v).filter(x => x && typeof x.w === 'string').map(x => [x.w, Number(x.c) || 1])])) }) : null;
 
 /* ตัวแปลงให้เรียกใช้รูปแบบเดียวกับโค้ดด้านบน (doc/collection/set/update/onSnapshot) */
 function mkDb(rdb){
@@ -1374,7 +1418,7 @@ function mkDb(rdb){
 }
 
 function logout(){ firebase.auth().signOut().then(() => location.reload()); }
-function loginView(){
+function loginView(noCancel){
   const em = h('input', { type:'email', id:'l-email', autocomplete:'username' });
   const pw = h('input', { type:'password', id:'l-pw', autocomplete:'current-password' });
   const err = h('p', { class:'err', 'aria-live':'polite' }, '');
@@ -1392,7 +1436,7 @@ function loginView(){
     err,
     h('div', { class:'actions' },
       h('button', { class:'btn primary', type:'button', on:{ click: go } }, 'เข้าสู่ระบบ'),
-      h('button', { class:'btn', type:'button', on:{ click: () => { S.ui.login = false; render(); } } }, 'ยกเลิก')));
+      noCancel ? null : h('button', { class:'btn', type:'button', on:{ click: () => { S.ui.login = false; render(); } } }, 'ยกเลิก')));
 }
 
 function boot(){
