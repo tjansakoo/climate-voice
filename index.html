@@ -9,7 +9,7 @@
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600&family=Prompt:wght@500;600;700&display=swap" rel="stylesheet">
 <style>
 :root{
-  --bg:#EEF2F1; --surface:#FFFFFF; --ink:#13242C; --muted:#54666E; --line:#C6D3D6; --tint:#E1EAE9;
+  --bg:#EEF2F1; --surface:#FFFFFF; --ink:#13242C; --muted:#54666E; --line:#C6D3D6; --tint:#E1EAE9; --bar:#BFDCD3;
   --c0:#C93A52; --c1:#E8683F; --c2:#EFA03F; --c3:#DDBF4E; --c4:#6FAE9B; --c5:#4A82B3;
   --font-display:'Prompt','IBM Plex Sans Thai',system-ui,'Noto Sans Thai',sans-serif;
   --font-body:'IBM Plex Sans Thai','Noto Sans Thai',system-ui,-apple-system,'Segoe UI',sans-serif;
@@ -19,12 +19,12 @@
 }
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
-    --bg:#0E181D; --surface:#16252C; --ink:#E7EFF1; --muted:#9DB0B7; --line:#2C414A; --tint:#1C2E36;
+    --bg:#0E181D; --surface:#16252C; --ink:#E7EFF1; --muted:#9DB0B7; --line:#2C414A; --tint:#1C2E36; --bar:#2F5A4F;
     --c0:#E3586D; --c1:#F07F57; --c2:#F3AE55; --c3:#E8CC66; --c4:#88C4B1; --c5:#6FA3D1;
   }
 }
 :root[data-theme="dark"]{
-  --bg:#0E181D; --surface:#16252C; --ink:#E7EFF1; --muted:#9DB0B7; --line:#2C414A; --tint:#1C2E36;
+  --bg:#0E181D; --surface:#16252C; --ink:#E7EFF1; --muted:#9DB0B7; --line:#2C414A; --tint:#1C2E36; --bar:#2F5A4F;
   --c0:#E3586D; --c1:#F07F57; --c2:#F3AE55; --c3:#E8CC66; --c4:#88C4B1; --c5:#6FA3D1;
 }
 html{scroll-padding-top:env(safe-area-inset-top,0px)}
@@ -111,6 +111,25 @@ footer{margin-top:40px;color:var(--muted);font-size:.82rem;line-height:1.7}
 .qrfull{text-align:center;padding:12px 0}
 .qrfull .qrbox svg{width:min(78vw,56vh,520px);margin:18px auto}
 .qrurl{word-break:break-all;color:var(--muted)}
+.consent{white-space:pre-line;margin:0 0 14px}
+svg.cloud{display:block;width:100%;height:auto;margin-top:8px}
+svg.cloud text{font-family:var(--font-display);font-weight:600}
+svg.cloud text:focus-visible{outline:2px solid var(--ink)}
+.xwrap{margin-top:22px}
+.xscroll{overflow-x:auto;margin-top:6px}
+table.xt{border-collapse:collapse;width:100%;min-width:420px;font-size:.9rem}
+.xt th,.xt td{padding:6px 10px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+.xt th:first-child,.xt td.xl{text-align:left;white-space:normal;min-width:160px}
+.xt th{font-weight:600;vertical-align:bottom}
+.xt th small{display:block;font-weight:400;color:var(--muted)}
+.xt td{background:linear-gradient(to right,var(--bar) var(--p,0%),transparent var(--p,0%))}
+.xt td.xl{background:none}
+.tlist{margin:0;padding-left:1.2em;max-height:340px;overflow:auto}
+.tlist li{margin:0 0 8px;overflow-wrap:anywhere}
+details{margin-top:10px}
+summary{cursor:pointer;font-weight:500}
+.opt:disabled{opacity:.45;cursor:default}
+.opt:disabled:hover{border-color:var(--line)}
 @media (prefers-reduced-motion:reduce){.dot.pop{animation:none}.opt,.meter b{transition:none}}
 </style>
 </head>
@@ -149,18 +168,45 @@ const FIREBASE_CONFIG = {
 /* ================= ชุดคำถามเริ่มต้น (ร่าง) =================
    ใช้เมื่อยังไม่เคยบันทึกคลังคำถาม ผู้ดำเนินกิจกรรมแก้ไขได้ในแท็บ “คำถาม”
    draft = ยังไม่ได้ตรวจถ้อยคำเทียบกับแบบสอบถามทางการของ UNDP */
-const heatsFor = (n, dir) => Array.from({length:n}, (_, i) => { const t = n === 1 ? 0 : Math.round(i * 5 / (n - 1)); return dir === 'cool' ? 5 - t : t; });
-const mkQ = (id, text, labels, extra) => Object.assign({
-  id, text, hint: 'เลือกข้อที่ตรงกับคุณที่สุด', dir: 'hot', enabled: true, draft: true, benchmark: null,
-  options: labels.map((label, i) => ({ label, heat: heatsFor(labels.length, (extra && extra.dir) || 'hot')[i] }))
-}, extra || {});
+const heatsFor = (n, dir) => Array.from({length:n}, (_, i) => { if (dir === 'flat') return 4; const t = n === 1 ? 0 : Math.round(i * 5 / (n - 1)); return dir === 'cool' ? 5 - t : t; });
+const OTHER_LABEL = 'อื่นๆ โปรดระบุ';
+/* ข้อความขอความยินยอมตั้งต้น (ร่าง) ผู้ดำเนินกิจกรรมแก้ไขได้ตอนเปิดห้อง และควรแทนด้วยข้อความจริงของโครงการ */
+const DEFAULT_CONSENT = {
+  title:'ข้อมูลโครงการและการยินยอมเข้าร่วม',
+  body:'กิจกรรมนี้จัดขึ้นเพื่อรับฟังมุมมองของผู้เข้าร่วมต่อการเปลี่ยนแปลงสภาพภูมิอากาศ โดยปรับแนวคำถามจากการสำรวจ The Peoples’ Climate Vote 2024 ของโครงการพัฒนาแห่งสหประชาชาติ (UNDP)\n\nข้อมูลที่เก็บ: ช่วงอายุ เพศ อาชีพ และความคิดเห็นของคุณต่อคำถามในกิจกรรม ระบบไม่เก็บชื่อ อีเมล เบอร์โทรศัพท์ หรือข้อมูลอื่นที่ระบุตัวตนของคุณ\n\nการนำไปใช้: ผลจะถูกสรุปเป็นภาพรวมของกลุ่มเพื่อใช้ในกิจกรรมและการศึกษา ไม่มีการเผยแพร่คำตอบรายบุคคล\n\nการเข้าร่วมเป็นความสมัครใจ คุณข้ามข้อที่ไม่สะดวกตอบได้ และหยุดเข้าร่วมได้ทุกเมื่อโดยปิดหน้านี้ เนื่องจากคำตอบไม่ระบุตัวตน จึงอาจลบคำตอบรายบุคคลในภายหลังไม่ได้\n\nติดต่อผู้จัดกิจกรรม: [ใส่ชื่อและช่องทางติดต่อ]'
+};
+/* type: single = เลือกข้อเดียว, multi = เลือกหลายข้อ (max = จำนวนสูงสุด), text = พิมพ์ตอบ
+   dir: hot/cool = ไล่สีตามลำดับ, flat = สีเดียว (เหมาะกับตัวเลือกที่ไม่ใช่ระดับ) */
+function mkQ(id, type, part, text, labels, opt){
+  opt = opt || {};
+  const dir = opt.dir || 'hot', total = labels.length + (opt.other ? 1 : 0), heats = heatsFor(total, dir);
+  const options = labels.map((label, i) => ({ label, heat:heats[i] }));
+  if (opt.other) options.push({ label:opt.otherLabel || OTHER_LABEL, heat:heats[labels.length], other:true });
+  return { id, type, part, text, hint:'', dir, max:opt.max || null, enabled:true, draft:false, benchmark:null, options };
+}
+const P2 = 'ส่วนที่ 2: ข้อมูลทั่วไป', P3 = 'ส่วนที่ 3: มุมมองต่อการเปลี่ยนแปลงสภาพภูมิอากาศ', P4 = 'ส่วนที่ 4: ความตั้งใจในการลงมือปฏิบัติ', P5 = 'ส่วนที่ 5: ข้อคิดเห็นเพิ่มเติม';
 const DEFAULTS = [
-  mkQ('q1', 'คุณคิดถึงเรื่องการเปลี่ยนแปลงสภาพภูมิอากาศบ่อยแค่ไหน?',
-      ['ทุกวัน','มากกว่าสัปดาห์ละครั้ง','สัปดาห์ละครั้ง','เดือนละครั้ง','น้อยกว่าเดือนละครั้ง','ไม่เคยคิดถึงเลย']),
-  mkQ('q2', 'เมื่อเทียบกับตอนนี้ คุณอยากให้ประเทศของคุณทำเรื่องสภาพภูมิอากาศอย่างไร?',
-      ['ทำมากกว่านี้มาก','ทำมากกว่านี้เล็กน้อย','ทำเท่าเดิม','ทำน้อยลง']),
-  mkQ('q3', 'ควรเปลี่ยนจากเชื้อเพลิงฟอสซิล (ถ่านหิน น้ำมัน ก๊าซ) ไปใช้พลังงานสะอาดเร็วแค่ไหน?',
-      ['เปลี่ยนอย่างรวดเร็ว','เปลี่ยนอย่างค่อยเป็นค่อยไป','ไม่ควรเปลี่ยน'])
+  mkQ('d1', 'single', P2, 'ช่วงอายุ', ['ต่ำกว่า 18 ปี', '18 - 22 ปี', '23 - 25 ปี', '26 ปีขึ้นไป'], { dir:'flat' }),
+  mkQ('d2', 'single', P2, 'เพศ', ['ชาย', 'หญิง', 'ทางเลือก / ไม่ต้องการระบุ'], { dir:'flat' }),
+  mkQ('d3', 'single', P2, 'อาชีพ', ['นิสิต/นักศึกษา', 'ข้าราชการ/พนักงานรัฐวิสาหกิจ', 'พนักงานบริษัทเอกชน', 'ธุรกิจส่วนตัว/ค้าขาย'], { dir:'flat', other:true }),
+  mkQ('c1', 'single', P3, 'คุณมีความกังวลเกี่ยวกับการเปลี่ยนแปลงสภาพภูมิอากาศมากแค่ไหน?', ['กังวลมากที่สุด', 'กังวลมาก', 'กังวลปานกลาง', 'กังวลน้อย', 'ไม่กังวลเลย']),
+  mkQ('c2', 'multi', P3, 'คุณคิดว่าปัญหาใดต่อไปนี้เร่งด่วนที่สุดเกี่ยวกับสภาพภูมิอากาศ?', [
+    'สภาพอากาศแปรปรวนสุดขั้วและภัยพิบัติ (เช่น น้ำท่วมรุนแรง, พายุ)', 'ภัยแล้งและการขาดแคลนน้ำ', 'มลพิษทางอากาศและฝุ่นควัน (เช่น PM2.5 จากการเผาในที่โล่ง)',
+    'ภาวะโลกเดือดและคลื่นความร้อน (Heatwave)', 'ความมั่นคงทางอาหารและผลกระทบต่อผลผลิตทางการเกษตร', 'การสูญเสียความหลากหลายทางชีวภาพ'], { dir:'flat', max:3, other:true }),
+  mkQ('c3', 'single', P3, 'ในความเห็นของคุณ ใครควรมีหน้าที่หลักในการจัดการปัญหาการเปลี่ยนแปลงสภาพภูมิอากาศ?',
+    ['รัฐบาลและผู้กำหนดนโยบาย', 'ภาคธุรกิจและอุตสาหกรรม', 'ประชาชนทุกคน', 'องค์กรระหว่างประเทศ', 'สถาบันการศึกษาและหน่วยงานวิจัย'], { dir:'flat' }),
+  mkQ('c4', 'single', P3, 'ท่านคิดถึงปัญหาการเปลี่ยนแปลงสภาพภูมิอากาศบ่อยแค่ไหน?',
+    ['ทุกวัน', 'บ่อยครั้ง (หลายครั้งต่อสัปดาห์)', 'บางครั้ง (หลายครั้งต่อเดือน)', 'นานๆ ครั้ง', 'แทบจะไม่เคยเลย']),
+  mkQ('c5', 'multi', P3, 'คุณคิดว่าการดำเนินการใดจะมีประสิทธิภาพที่สุดในการต่อสู้กับการเปลี่ยนแปลงสภาพภูมิอากาศ?', [
+    'การเปลี่ยนผ่านไปใช้พลังงานสะอาดและพลังงานหมุนเวียน', 'การลดการปล่อยก๊าซเรือนกระจกจากภาคอุตสาหกรรมและเกษตรกรรม', 'การบังคับใช้กฎหมายและนโยบายด้านสิ่งแวดล้อมที่เข้มงวด',
+    'การจัดการขยะอย่างยั่งยืนและลดการใช้พลาสติก', 'การฟื้นฟูพื้นที่ป่าไม้และการเพิ่มพื้นที่สีเขียว', 'การให้การศึกษาและสร้างความตระหนักรู้แก่ประชาชน'], { dir:'flat', max:3, other:true }),
+  mkQ('a1', 'single', P4, 'คุณมีความพร้อมในการดำเนินการส่วนตัวเพื่อช่วยแก้ไขปัญหาการเปลี่ยนแปลงสภาพภูมิอากาศมากแค่ไหน?',
+    ['พร้อมมากที่สุด', 'พร้อมมาก', 'ปานกลาง', 'ยังไม่ค่อยพร้อม', 'ไม่พร้อมเลย']),
+  mkQ('a2', 'multi', P4, 'คุณได้ดำเนินการหรือมีแผนจะดำเนินการใดบ้างในการช่วยแก้ไขปัญหาการเปลี่ยนแปลงสภาพภูมิอากาศ?', [
+    'ลดการใช้พลาสติกแบบใช้ครั้งเดียวทิ้ง', 'ประหยัดพลังงานในชีวิตประจำวัน (เช่น ปิดไฟ ปรับอุณหภูมิเครื่องปรับอากาศ)', 'ปรับเปลี่ยนรูปแบบการเดินทาง (เช่น ใช้ระบบขนส่งสาธารณะ ขี่จักรยาน เดิน)',
+    'คัดแยกขยะและนำกลับมาใช้ใหม่ (Recycle)', 'ปรับเปลี่ยนพฤติกรรมการบริโภค (เช่น ลดการบริโภคเนื้อสัตว์ สนับสนุนผลิตภัณฑ์ที่เป็นมิตรต่อสิ่งแวดล้อม)',
+    'เข้าร่วมกิจกรรมรณรงค์หรือสนับสนุนองค์กรด้านสิ่งแวดล้อม', 'ปลูกต้นไม้หรือเพิ่มพื้นที่สีเขียวในที่พักอาศัย'], { dir:'flat', other:true, otherLabel:'อื่นๆ (โปรดระบุ)' }),
+  mkQ('t1', 'text', P5, 'ข้อเสนอแนะหรือมุมมองเพิ่มเติมเกี่ยวกับการเปลี่ยนแปลงสภาพภูมิอากาศ (ถ้ามี)', [], { dir:'flat' })
 ];
 
 /* ================= state ================= */
@@ -173,7 +219,7 @@ const S = {
   chain: Promise.resolve(), autoBusy: false
 };
 const prevDots = {};
-S.presence = {}; S.offset = 0;
+S.presence = {}; S.offset = 0; S.settings = null; S.texts = {}; S.consents = {}; S.myConsent = null; S.consentReady = false;
 const P = { on:false, key:null, timer:null };
 
 /* ---------- presence: นับเฉพาะคนที่เปิดหน้านี้และอยู่หน้าจอ ---------- */
@@ -184,7 +230,8 @@ function activeIds(){
   return a;
 }
 function answeredActive(qid){
-  let n = 0; activeIds().forEach(id => { const v = S.votes[id]; if (v && v.sid === (S.state && S.state.sid) && v.answers && Number.isInteger(v.answers[qid])) n++; });
+  let n = 0; const sid = S.state && S.state.sid;
+  activeIds().forEach(id => { const v = S.votes[id]; if (v && v.sid === sid && v.answers && hasAnswer(v.answers[qid])) n++; });
   return n;
 }
 function pushPresence(){
@@ -194,7 +241,7 @@ function pushPresence(){
 function updatePresence(){
   if (!S.rdb || !S.uid) return;
   const st = S.state;
-  const want = S.mode === 'live' && st && (st.status === 'active' || st.status === 'lobby') && (!S.isAdmin || S.tab === 'participant');
+  const want = S.mode === 'live' && st && (st.status === 'active' || st.status === 'lobby') && (!S.isAdmin || S.tab === 'participant') && (!needConsent(st) || consented(st));
   const ref = S.rdb.ref('presence/' + S.uid);
   if (!want){
     if (P.on){ P.on = false; P.key = null; clearInterval(P.timer); ref.onDisconnect().cancel(); ref.remove().catch(() => {}); }
@@ -225,13 +272,130 @@ const clone = o => JSON.parse(JSON.stringify(o));
 const bankQs = () => S.bank || clone(DEFAULTS);
 
 function cohort(){ const sid = S.state && S.state.sid; return Object.values(S.votes).filter(v => v && v.sid === sid); }
-function countsFor(qid, n){
-  const c = new Array(n).fill(0);
-  cohort().forEach(v => { const x = v.answers && v.answers[qid]; if (Number.isInteger(x) && x >= 0 && x < n) c[x]++; });
-  return c;
+const hasAnswer = x => x != null && (Array.isArray(x) ? x.length > 0 : typeof x === 'object' ? Object.keys(x).length > 0 : true);
+/* นับผลของคำถามหนึ่งข้อ: counts ต่อตัวเลือก, total = จำนวนคนที่ตอบ (multi เลือกหลายข้อได้ จึงรวม counts เกิน total ได้) */
+function tally(q){
+  const n = q.options.length, c = new Array(n).fill(0); let total = 0, withText = 0;
+  cohort().forEach(v => {
+    const x = v.answers && v.answers[q.id]; if (x == null) return;
+    if (q.type === 'text'){ if (x === 1 || x === 0){ total++; if (x === 1) withText++; } }
+    else if (q.type === 'multi'){ const set = new Set(arr(x).filter(i => Number.isInteger(i) && i >= 0 && i < n)); if (set.size){ total++; set.forEach(i => c[i]++); } }
+    else if (Number.isInteger(x) && x >= 0 && x < n){ c[x]++; total++; }
+  });
+  return { counts:c, total, withText };
 }
-const answeredCount = qid => cohort().filter(v => v.answers && Number.isInteger(v.answers[qid])).length;
+const answeredCount = qid => cohort().filter(v => v.answers && hasAnswer(v.answers[qid])).length;
 const myAnswer = qid => (S.mine && S.state && S.mine.sid === S.state.sid && S.mine.answers) ? S.mine.answers[qid] : undefined;
+const otherIdx = q => q.options.findIndex(o => o.other);
+/* ข้อความที่ผู้เข้าร่วมพิมพ์ (เฉพาะแอดมินอ่านได้): ข้อความยาว หรือช่อง “อื่นๆ โปรดระบุ” */
+function textsFor(q){
+  const sid = S.state && S.state.sid, out = [], oi = otherIdx(q);
+  Object.keys(S.texts).forEach(u => {
+    const e = S.texts[u]; if (!e) return;
+    if (q.type === 'text'){ const t = e[q.id]; if (t && t.sid === sid && typeof t.v === 'string' && t.v.trim()) out.push(t.v.trim()); return; }
+    if (oi < 0) return;
+    const t = e[q.id + '_o'], v = S.votes[u], sel = v && v.sid === sid && v.answers ? v.answers[q.id] : undefined;
+    const picked = q.type === 'multi' ? arr(sel).includes(oi) : sel === oi;
+    if (picked && t && t.sid === sid && typeof t.v === 'string' && t.v.trim()) out.push(t.v.trim());
+  });
+  return out;
+}
+function textList(title, items){
+  return h('div', null, h('h2', null, title + ' (' + items.length + ')'), items.length ? h('ul', { class:'tlist' }, items.map(t => h('li', null, t))) : h('p', { class:'muted' }, 'ยังไม่มี'));
+}
+
+/* ================= Word cloud ================= */
+const STOP = new Set(('และ หรือ ที่ ของ ใน การ ความ ให้ ไป มา มี เป็น ได้ จะ ก็ ไม่ แต่ ว่า ด้วย กับ นี้ นั้น จาก โดย เพื่อ ควร ต้อง คือ แล้ว ยัง อีก เรา ผม ฉัน คุณ เขา ซึ่ง เมื่อ ถ้า แค่ อะไร อย่าง หลาย ทุก บาง ขึ้น ลง ค่ะ คะ ครับ นะ เลย หน่อย อยาก ๆ ' +
+  'the and of to a in is for on it we are be with that this').split(' '));
+function segWords(text){
+  const t = String(text).toLowerCase();
+  try {
+    if (typeof Intl !== 'undefined' && Intl.Segmenter){
+      return [...new Intl.Segmenter('th', { granularity:'word' }).segment(t)].filter(x => x.isWordLike).map(x => x.segment);
+    }
+  } catch (e) {}
+  return t.split(/[\s,.;:!?()\[\]{}"'“”‘’\/\\-]+/).filter(Boolean);
+}
+function cloudWords(texts, qid){
+  const hide = (S.ui.hide && S.ui.hide[qid]) || new Set(), cnt = new Map();
+  texts.forEach(t => {
+    const seen = new Set();
+    segWords(t).forEach(w => {
+      if (w.length < 2 || /^[0-9.,]+$/.test(w) || STOP.has(w) || hide.has(w) || seen.has(w)) return;
+      seen.add(w); cnt.set(w, (cnt.get(w) || 0) + 1);
+    });
+  });
+  return [...cnt.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'th')).slice(0, 60);
+}
+function layoutCloud(words, W, H){
+  let ctx = null; try { ctx = document.createElement('canvas').getContext('2d'); } catch (e) {}
+  const measure = (w, size) => { if (ctx){ ctx.font = '600 ' + size + 'px Prompt, "IBM Plex Sans Thai", sans-serif'; return ctx.measureText(w).width; } return w.length * size * 0.58; };
+  const cs = words.map(x => x[1]), max = Math.max.apply(null, cs), min = Math.min.apply(null, cs), placed = [], out = [];
+  words.forEach(([w, c], idx) => {
+    const t = max === min ? 0.6 : (Math.sqrt(c) - Math.sqrt(min)) / (Math.sqrt(max) - Math.sqrt(min));
+    let size = Math.round(15 + t * 40);
+    for (let attempt = 0; attempt < 4 && size >= 11; attempt++){
+      const tw = measure(w, size) + 10, th = size * 1.3; let a = idx * 0.9, r = 0, pos = null;
+      for (let k = 0; k < 2500; k++){
+        const x = W / 2 + r * Math.cos(a) * 1.7 - tw / 2, y = H / 2 + r * Math.sin(a) - th / 2;
+        if (x >= 0 && y >= 0 && x + tw <= W && y + th <= H && !placed.some(q => x < q.x + q.w && x + tw > q.x && y < q.y + q.h && y + th > q.y)){ pos = { x, y }; break; }
+        a += 0.25; r += 0.35;
+      }
+      if (pos){ placed.push({ x:pos.x, y:pos.y, w:tw, h:th }); out.push({ w, c, size, x:pos.x + 5, y:pos.y + size, i:idx }); break; }
+      size = Math.round(size * 0.8);
+    }
+  });
+  return out;
+}
+function cloudSvg(words, o){
+  o = o || {};
+  const W = 700, H = 380, NS = 'http://www.w3.org/2000/svg', pal = [0, 1, 4, 5];
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H); svg.setAttribute('class', 'cloud'); svg.setAttribute('role', 'img');
+  svg.setAttribute('aria-label', 'Word cloud คำที่พูดถึงบ่อย: ' + words.slice(0, 8).map(x => x[0]).join(', '));
+  layoutCloud(words, W, H).forEach(p => {
+    const t = document.createElementNS(NS, 'text');
+    t.setAttribute('x', p.x); t.setAttribute('y', p.y); t.setAttribute('font-size', p.size); t.setAttribute('fill', 'var(--c' + pal[p.i % 4] + ')');
+    t.textContent = p.w;
+    const ti = document.createElementNS(NS, 'title'); ti.textContent = p.w + ' (' + p.c + ' ความเห็น)'; t.append(ti);
+    if (o.onClick){
+      t.style.cursor = 'pointer'; t.setAttribute('tabindex', '0'); t.setAttribute('role', 'button');
+      t.addEventListener('click', () => o.onClick(p.w));
+      t.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); o.onClick(p.w); } });
+    }
+    svg.append(t);
+  });
+  return svg;
+}
+function toggleHide(qid, w){
+  S.ui.hide = S.ui.hide || {};
+  const set = S.ui.hide[qid] || (S.ui.hide[qid] = new Set());
+  if (set.has(w)) set.delete(w); else set.add(w);
+  render();
+}
+function publishCloud(q){
+  const words = cloudWords(textsFor(q), q.id).map(x => ({ w:x[0].slice(0, 40), c:x[1] }));
+  if (!words.length) return;
+  adm(() => S.db.doc('live/state').update({ cloud:{ [q.id]:words } }));
+}
+function unpublishCloud(q){ adm(() => S.db.doc('live/state').update({ cloud:{ [q.id]:null } })); }
+function cloudPanel(q, texts, o){
+  o = o || {};
+  const words = cloudWords(texts, q.id), hide = (S.ui.hide && S.ui.hide[q.id]) || new Set();
+  const box = h('div', null, h('h2', null, 'Word cloud'));
+  if (!words.length) box.append(h('p', { class:'muted' }, texts.length ? 'ไม่มีคำที่แสดงได้ (คำทั่วไปถูกกรองออกแล้ว)' : 'ยังไม่มีความเห็น'));
+  else box.append(cloudSvg(words, { onClick: w => toggleHide(q.id, w) }), h('p', { class:'note' }, 'ขนาดตัวอักษรตามจำนวนความเห็นที่พูดถึงคำนั้น แตะคำเพื่อซ่อน เช่น ชื่อบุคคลหรือคำที่ไม่ต้องการแสดง'));
+  if (hide.size) box.append(h('p', { class:'small muted' }, 'คำที่ซ่อนอยู่: ', [...hide].map(w => h('button', { class:'btn sm', type:'button', style:'margin:2px', on:{ click: () => toggleHide(q.id, w) } }, w + ' ✕'))));
+  if (o.publish){
+    const pub = S.state && S.state.cloud && S.state.cloud[q.id];
+    box.append(h('div', { class:'actions' },
+      words.length ? h('button', { class:'btn sm primary', type:'button', on:{ click: () => publishCloud(q) } }, pub ? 'อัปเดตที่ผู้เข้าร่วมเห็น' : 'แสดงให้ผู้เข้าร่วมเห็น') : null,
+      pub ? h('button', { class:'btn sm', type:'button', on:{ click: () => unpublishCloud(q) } }, 'ซ่อนจากผู้เข้าร่วม') : null));
+    box.append(h('p', { class:'note' }, pub ? 'ผู้เข้าร่วมเห็น word cloud นี้อยู่ (เห็นเฉพาะคำรวม ไม่เห็นข้อความรายคน) ถ้าซ่อนคำเพิ่ม กด “อัปเดต” เพื่อให้ตรงกัน' : 'ผู้เข้าร่วมจะไม่เห็น word cloud จนกว่าคุณจะกดแสดง'));
+  }
+  return box;
+}
+const publicCloud = (q, st) => { const list = st && st.cloud && st.cloud[q.id]; return list && list.length ? h('div', null, h('h2', null, 'คำที่พูดถึงบ่อย'), cloudSvg(list)) : null; };
 
 /* ================= ส่วนแสดงผลลัพธ์ ================= */
 function benchLine(q, i){
@@ -240,13 +404,14 @@ function benchLine(q, i){
 }
 function resultBlock(q, counts, o){
   o = o || {};
-  const total = counts.reduce((a, b) => a + b, 0);
+  const total = o.total != null ? o.total : counts.reduce((a, b) => a + b, 0);
+  const isMine = i => Array.isArray(o.mine) ? o.mine.includes(i) : o.mine === i;
   const frag = document.createDocumentFragment();
   const per = total > 300 ? Math.ceil(total / 300) : 1;
   const d = total <= 40 ? 16 : total <= 150 ? 10 : 7, gap = d <= 7 ? 3 : 5;
   q.options.forEach((opt, i) => {
     const pct = total ? Math.round(100 * counts[i] / total) : 0;
-    const lab = h('span', { class:'rowlabel' }, opt.label, o.mine === i ? h('span', { class:'mine' }, 'คุณ') : null);
+    const lab = h('span', { class:'rowlabel' }, opt.label, isMine(i) ? h('span', { class:'mine' }, 'คุณ') : null);
     const head = h('div', { class:'rowhead' }, lab, h('span', { class:'rownum' }, pct + '%', h('small', null, counts[i] + ' คน')));
     const row = h('div', { class:'row' }, head);
     if (o.kind === 'bars'){
@@ -259,7 +424,7 @@ function resultBlock(q, counts, o){
       const n = Math.ceil(counts[i] / per), key = (o.key || q.id) + ':' + i, before = prevDots[key] != null ? prevDots[key] : n;
       for (let k = 0; k < n; k++){
         const dot = h('span', { class:'dot', style:'--col:var(--c' + opt.heat + ')' });
-        if (o.mine === i && k === 0) dot.classList.add('me');
+        if (isMine(i) && k === 0) dot.classList.add('me');
         if (k >= before) dot.classList.add('pop');
         dots.append(dot);
       }
@@ -270,14 +435,105 @@ function resultBlock(q, counts, o){
     frag.append(row);
   });
   if (per > 1) frag.append(h('p', { class:'legend' }, '1 จุด แทน ' + per + ' คน'));
+  if (q.type === 'multi') frag.append(h('p', { class:'legend' }, 'เลือกได้หลายข้อ ร้อยละคิดจากจำนวนผู้ตอบ รวมกันเกิน 100% ได้'));
   return frag;
 }
 
 /* ================= มุมมองผู้เข้าร่วม ================= */
 function msgView(title, sub){ return h('div', { class:'centered' }, h('h1', null, title), sub ? h('p', { class:'hint' }, sub) : null); }
 
+const needConsent = st => !!(st && st.consent && st.consent.body);
+const consented = st => !!(st && S.myConsent && S.myConsent.sid === st.sid);
+function giveConsent(){
+  const st = S.state; if (!st) return;
+  S.myConsent = { sid:st.sid };
+  S.chain = S.chain.then(() => S.db.doc('consents/' + S.uid).set({ sid:st.sid, t:Date.now() })).catch(() => { S.saveErr = true; schedule(); });
+  updatePresence(); render();
+}
+function consentView(st){
+  const c = st.consent || {};
+  if (S.ui.declined) return h('div', { class:'centered' }, h('h1', null, 'ยังไม่ได้เข้าร่วม'), h('p', { class:'hint' }, 'ไม่เป็นไร คุณปิดหน้านี้ได้เลย หรือกลับมาอ่านและยินยอมภายหลังก็ได้'),
+    h('div', { class:'actions', style:'justify-content:center' }, h('button', { class:'btn', type:'button', on:{ click: () => { S.ui.declined = false; render(); } } }, 'กลับไปอ่านอีกครั้ง')));
+  const ok = h('button', { class:'btn primary', type:'button', disabled: !S.ui.consentTick, on:{ click: giveConsent } }, 'ยินยอมและเข้าร่วม');
+  const tick = h('input', { type:'checkbox', id:'c-tick', checked: !!S.ui.consentTick });
+  tick.addEventListener('change', () => { S.ui.consentTick = tick.checked; ok.disabled = !tick.checked; });
+  return h('div', null,
+    h('h1', null, c.title || 'การยินยอมเข้าร่วม'),
+    String(c.body || '').split(/\n\s*\n/).filter(Boolean).map(t => h('p', { class:'consent' }, t)),
+    h('label', { class:'check', style:'margin-top:20px' }, tick, h('span', null, 'ฉันได้อ่านข้อมูลข้างต้นแล้ว และยินยอมเข้าร่วมกิจกรรม')),
+    h('div', { class:'actions' }, ok, h('button', { class:'btn', type:'button', on:{ click: () => { S.ui.declined = true; render(); } } }, 'ไม่ยินยอม')));
+}
+const qHint = q => q.type === 'multi' ? (q.max ? 'เลือกได้สูงสุด ' + q.max + ' ข้อ' : 'เลือกทุกข้อที่ตรงกับคุณ') : q.type === 'text' ? 'พิมพ์ได้ตามสบาย ถ้าไม่มีให้กด “ข้ามข้อนี้”' : 'เลือกข้อที่ตรงกับคุณที่สุด';
+const progressLine = (q, i, n) => (q.part ? q.part + ' ' : '') + '(ข้อ ' + (i + 1) + ' จาก ' + n + ')';
+
+function draftOf(q){
+  S.ui.draft = S.ui.draft || {};
+  const k = S.state.sid + ':' + q.id;
+  if (!S.ui.draft[k]){ const m = myAnswer(q.id); S.ui.draft[k] = { sel: q.type === 'multi' ? arr(m).filter(Number.isInteger) : [], other:'', text:'', saved:false }; }
+  return S.ui.draft[k];
+}
+function saveText(key, v){
+  if (!S.state || S.state.status !== 'active' || !v) return;
+  const sid = S.state.sid, text = String(v).slice(0, 1000);
+  S.chain = S.chain.then(() => S.db.doc('texts/' + S.uid + '/' + key).set({ sid, v:text })).catch(() => { S.saveErr = true; schedule(); });
+}
+function toggle(q, i){
+  const d = draftOf(q), k = d.sel.indexOf(i);
+  if (k >= 0) d.sel.splice(k, 1); else if (!q.max || d.sel.length < q.max) d.sel.push(i);
+  render();
+}
+function submitMulti(q){
+  const d = draftOf(q); if (!d.sel.length) return;
+  const sel = d.sel.slice().sort((a, b) => a - b), oi = otherIdx(q);
+  if (oi >= 0 && sel.includes(oi) && d.other.trim()) saveText(q.id + '_o', d.other.trim());
+  answer(q.id, sel);
+}
+function submitText(q){
+  const d = draftOf(q), v = d.text.trim(); if (!v) return;
+  saveText(q.id, v); answer(q.id, 1);
+}
+function saveOther(q){
+  const d = draftOf(q), v = d.other.trim(); if (!v) return;
+  saveText(q.id + '_o', v); d.saved = true; render();
+}
+
+function inputControls(q, mine){
+  const d = draftOf(q), oi = otherIdx(q), wrap = document.createDocumentFragment();
+  if (q.type === 'text'){
+    const send = h('button', { class:'btn primary', type:'button', disabled: !d.text.trim(), on:{ click: () => submitText(q) } }, mine === 1 ? 'อัปเดตความเห็น' : 'ส่งความเห็น');
+    const ta = h('textarea', { maxlength:'1000', rows:'5', placeholder:'พิมพ์ความเห็นของคุณที่นี่', 'aria-label':q.text }, d.text);
+    ta.addEventListener('input', () => { d.text = ta.value; send.disabled = !d.text.trim(); });
+    wrap.append(ta, h('div', { class:'actions' }, send, mine == null ? h('button', { class:'btn', type:'button', on:{ click: () => answer(q.id, 0) } }, 'ข้ามข้อนี้') : null));
+    return wrap;
+  }
+  const multi = q.type === 'multi', list = h('div', { class:'options' });
+  q.options.forEach((opt, i) => {
+    const pressed = multi ? d.sel.includes(i) : mine === i;
+    const blocked = !!(multi && q.max && !pressed && d.sel.length >= q.max);
+    list.append(h('button', { class:'opt', type:'button', 'aria-pressed': pressed ? 'true' : 'false', disabled: blocked, on:{ click: () => multi ? toggle(q, i) : answer(q.id, i) } },
+      h('span', { class:'sw', style:'background:var(--c' + opt.heat + ')' }), h('span', null, opt.label),
+      pressed ? h('span', { class:'tick' }, multi ? 'เลือกแล้ว' : 'คำตอบของคุณ') : null));
+  });
+  wrap.append(list);
+  const otherOn = oi >= 0 && (multi ? d.sel.includes(oi) : mine === oi);
+  if (otherOn){
+    const inp = h('input', { type:'text', maxlength:'200', placeholder:'โปรดระบุ', 'aria-label':'โปรดระบุ', value:d.other });
+    inp.addEventListener('input', () => { d.other = inp.value; d.saved = false; });
+    if (!multi) inp.addEventListener('change', () => saveOther(q));
+    wrap.append(h('label', { class:'field', style:'margin-top:14px' }, 'โปรดระบุ', inp));
+    if (!multi) wrap.append(h('div', { class:'actions', style:'margin-top:0' }, h('button', { class:'btn sm', type:'button', on:{ click: () => saveOther(q) } }, 'บันทึกข้อความ'), d.saved ? h('span', { class:'muted small' }, 'บันทึกแล้ว') : null));
+  }
+  if (multi){
+    wrap.append(h('div', { class:'actions' },
+      h('button', { class:'btn primary', type:'button', disabled: !d.sel.length, on:{ click: () => submitMulti(q) } }, mine != null ? 'อัปเดตคำตอบ' : 'ส่งคำตอบ'),
+      h('span', { class:'muted small' }, 'เลือกแล้ว ' + d.sel.length + (q.max ? ' จาก ' + q.max : '') + ' ข้อ')));
+  }
+  return wrap;
+}
+
 function participantView(){
   const st = S.state;
+  if (st && (st.status === 'lobby' || st.status === 'active') && needConsent(st) && !consented(st)) return consentView(st);
   if (st && st.status === 'lobby'){
     const online = activeIds().size;
     return msgView('รอผู้ดำเนินกิจกรรมเริ่ม', 'คุณอยู่ในห้องแล้ว ตอนนี้มีคนออนไลน์ ' + Math.max(online, 1) + ' คน คำถามข้อแรกจะขึ้นเองเมื่อพร้อม');
@@ -288,38 +544,38 @@ function participantView(){
     frag.append(h('h1', null, 'จบกิจกรรมแล้ว'), h('p', { class:'hint' }, 'ขอบคุณที่ร่วมส่งเสียง นี่คือผลของทั้งห้อง'));
     st.questions.forEach((q, qi) => {
       frag.append(h('h2', null, 'ข้อ ' + (qi + 1) + ' ' + q.text));
-      frag.append(resultBlock(q, countsFor(q.id, q.options.length), { mine: myAnswer(q.id), key:'end-' + st.sid + q.id }));
+      const tl = tally(q);
+      if (q.type === 'text'){ frag.append(h('p', { class:'muted' }, 'มีผู้ร่วมแสดงความเห็น ' + tl.withText + ' คน')); const pc = publicCloud(q, st); if (pc) frag.append(pc); }
+      else frag.append(resultBlock(q, tl.counts, { mine: myAnswer(q.id), total:tl.total, key:'end-' + st.sid + q.id }));
     });
     return frag;
   }
-  const q = st.questions[st.cur], n = q.options.length;
+  const q = st.questions[st.cur];
   const revealed = !!(st.revealed && st.revealed[q.id]);
   const frag = document.createDocumentFragment();
-  frag.append(h('p', { class:'progress' }, 'ข้อ ' + (st.cur + 1) + ' จาก ' + st.questions.length), h('h1', null, q.text));
+  frag.append(h('p', { class:'progress' }, progressLine(q, st.cur, st.questions.length)), h('h1', null, q.text));
   const mine = myAnswer(q.id);
   if (revealed){
-    const counts = countsFor(q.id, n), total = counts.reduce((a, b) => a + b, 0);
-    const t = h('p', { class:'total', 'aria-live':'polite' }, 'ตอบแล้ว ' + total + ' คน');
-    frag.append(t, resultBlock(q, counts, { mine, key:st.sid + q.id }));
+    const tl = tally(q);
+    if (q.type === 'text'){
+      frag.append(h('p', { class:'total', 'aria-live':'polite' }, 'มีผู้ร่วมแสดงความเห็น ' + tl.withText + ' คน'), h('p', { class:'hint' }, 'ขอบคุณที่ร่วมแบ่งปันมุมมอง ความเห็นทั้งหมดเป็นแบบไม่ระบุตัวตน'));
+    } else {
+      frag.append(h('p', { class:'total', 'aria-live':'polite' }, 'ตอบแล้ว ' + tl.total + ' คน'), resultBlock(q, tl.counts, { mine, total:tl.total, key:st.sid + q.id }));
+    }
     if (mine == null) frag.append(h('p', { class:'note' }, 'ข้อนี้ปิดรับคำตอบแล้ว'));
   } else {
-    frag.append(h('p', { class:'hint' }, q.hint || ''));
-    const list = h('div', { class:'options' });
-    q.options.forEach((opt, i) => {
-      list.append(h('button', { class:'opt', type:'button', 'aria-pressed': mine === i ? 'true' : 'false', on:{ click: () => answer(q.id, i) } },
-        h('span', { class:'sw', style:'background:var(--c' + opt.heat + ')' }), h('span', null, opt.label),
-        mine === i ? h('span', { class:'tick' }, 'คำตอบของคุณ') : null));
-    });
-    frag.append(list);
-    if (mine != null){
+    frag.append(h('p', { class:'hint' }, qHint(q)));
+    frag.append(inputControls(q, mine));
+    if (hasAnswer(mine)){
       const online = activeIds().size, ans = answeredActive(q.id), joined = Math.max(online, ans);
       frag.append(h('div', { class:'sent', 'aria-live':'polite' },
         'ส่งคำตอบแล้ว รอเพื่อนๆ ' + ans + ' จาก ' + joined + ' คน ผลจะขึ้นเองเมื่อผู้ดำเนินกิจกรรมเปิดเผย',
         h('div', { class:'meter' }, h('b', { style:'width:' + (joined ? Math.round(100 * ans / joined) : 0) + '%' }))));
-      frag.append(h('p', { class:'note' }, 'แตะข้ออื่นเพื่อเปลี่ยนคำตอบได้จนกว่าผลจะเปิด'));
+      frag.append(h('p', { class:'note' }, q.type === 'single' ? 'แตะข้ออื่นเพื่อเปลี่ยนคำตอบได้จนกว่าผลจะเปิด' : 'แก้ไขแล้วกดอัปเดตได้จนกว่าผลจะเปิด'));
     }
   }
-  if (S.saveErr) frag.append(h('p', { class:'err' }, 'บันทึกคำตอบไม่สำเร็จ ลองแตะเลือกอีกครั้ง'));
+  if (q.type === 'text'){ const pc = publicCloud(q, st); if (pc) frag.append(pc); }
+  if (S.saveErr) frag.append(h('p', { class:'err' }, 'บันทึกคำตอบไม่สำเร็จ ลองอีกครั้ง'));
   return frag;
 }
 
@@ -329,7 +585,7 @@ function saveMine(){
     .catch(() => { S.saveErr = true; schedule(); });
 }
 function answer(qid, i){
-  if (!S.state || S.state.status !== 'active') return;
+  if (!S.state || S.state.status !== 'active' || (needConsent(S.state) && !consented(S.state))) return;
   if (!S.mine || S.mine.sid !== S.state.sid) S.mine = { sid:S.state.sid, answers:{} };
   S.mine = { sid:S.mine.sid, answers:Object.assign({}, S.mine.answers, { [qid]: i }) };
   S.votes = Object.assign({}, S.votes, { [S.uid]: { sid:S.mine.sid, answers:S.mine.answers } });
@@ -351,17 +607,41 @@ async function adm(fn){
   try { await fn(); } catch (e) { S.adminErr = 'ทำรายการไม่สำเร็จ ลองอีกครั้ง'; }
   render();
 }
-function startSession(title, auto){
-  const qs = bankQs().filter(q => q.enabled !== false).map(q => ({ id:q.id, text:q.text, hint:q.hint || '', options:q.options, benchmark:q.benchmark || null }));
+function startSession(title, auto, consent, consentOn){
+  const qs = bankQs().filter(q => q.enabled !== false).map(q => ({ id:q.id, type:q.type || 'single', max:q.max || null, part:q.part || null, text:q.text, hint:q.hint || '', options:q.options || [], benchmark:q.benchmark || null }));
   if (!qs.length){ S.ui.startErr = 'เปิดใช้คำถามอย่างน้อย 1 ข้อในแท็บ “คำถาม” ก่อน'; render(); return; }
+  if (consent && (!consent.body || /\[ใส่/.test(consent.title + consent.body))){ S.ui.startErr = 'แก้ข้อความ “[ใส่…]” ในหน้าขอความยินยอมให้เรียบร้อยก่อนเริ่ม'; render(); return; }
   S.ui.startErr = '';
-  adm(() => S.db.doc('live/state').set({ sid:uidNew('s'), status:'lobby', title:title || 'Workshop', questions:qs, cur:0, revealed:{}, auto:!!auto }));
+  adm(async () => {
+    const cfg = { title:title || 'Workshop', auto:!!auto, consentOn:!!consentOn };
+    if (consent){ cfg.consentTitle = consent.title; cfg.consentBody = consent.body; }
+    await S.db.doc('live/state').set({ sid:uidNew('s'), status:'lobby', title:title || 'Workshop', questions:qs, cur:0, revealed:{}, auto:!!auto, consent: consent || null });
+    try { await S.db.doc('live/bank').update({ settings:cfg }); S.settings = Object.assign({}, S.settings, cfg); } catch (e) {}
+  });
 }
 function buildArchive(){
   const st = S.state;
+  const respondents = cohort().filter(v => v.answers && Object.keys(v.answers).length > 0);
+  /* ข้อมูลรายคนแบบไม่ระบุตัวตน (ไม่มีรหัสผู้ใช้ ไม่มีข้อความพิมพ์) ไว้ดูผลแยกกลุ่ม */
+  const responses = respondents.slice(0, 500).map(v => {
+    const o = {};
+    st.questions.forEach(q => {
+      if (q.type === 'text') return;
+      const x = v.answers[q.id];
+      if (q.type === 'multi'){ const l = arr(x).filter(Number.isInteger).sort((a, b) => a - b); if (l.length) o[q.id] = l; }
+      else if (Number.isInteger(x)) o[q.id] = x;
+    });
+    return o;
+  }).filter(o => Object.keys(o).length);
   return {
-    sid:st.sid, title:st.title, startedAt:st.startedAt || null, endedAt:Date.now(), participants:cohort().filter(v => v.answers && Object.keys(v.answers).length > 0).length,
-    questions: st.questions.map(q => { const counts = countsFor(q.id, q.options.length); return { id:q.id, text:q.text, options:q.options, benchmark:q.benchmark || null, counts, total:counts.reduce((a, b) => a + b, 0) }; })
+    sid:st.sid, title:st.title, startedAt:st.startedAt || null, endedAt:Date.now(), participants:respondents.length,
+    consented: needConsent(st) ? Object.values(S.consents).filter(c => c && c.sid === st.sid).length : null,
+    consentTitle: needConsent(st) ? st.consent.title || null : null,
+    questions: st.questions.map(q => {
+      const tl = tally(q), texts = textsFor(q).slice(0, 300);
+      return { id:q.id, type:q.type || 'single', max:q.max || null, part:q.part || null, text:q.text, options:q.options, benchmark:q.benchmark || null, counts:tl.counts, total:tl.total, withText:tl.withText, texts };
+    }),
+    responses
   };
 }
 function endSession(){
@@ -443,7 +723,9 @@ function adminLive(){
     frag.append(h('p', { class:'progress' }, st.title));
     frag.append(h('h1', null, 'ห้องรอผู้เข้าร่วม'));
     frag.append(h('p', { class:'hint' }, 'ผู้เข้าร่วมสแกน QR เข้ามารอได้เลย แต่ยังตอบไม่ได้ จะเห็นคำถามข้อแรกทันทีที่คุณกดเริ่ม'));
-    frag.append(h('div', { class:'stat' }, h('div', null, h('span', { class:'big', 'aria-live':'polite' }, online), h('small', null, 'ออนไลน์อยู่ตอนนี้'))));
+    const consentedN = Object.values(S.consents).filter(c => c && c.sid === st.sid).length;
+    frag.append(h('div', { class:'stat' }, h('div', null, h('span', { class:'big', 'aria-live':'polite' }, online), h('small', null, 'ออนไลน์อยู่ตอนนี้')),
+      needConsent(st) ? h('div', null, h('span', { class:'big' }, consentedN), h('small', null, 'ยินยอมแล้ว')) : null));
     frag.append(h('div', { class:'actions' },
       h('button', { class:'btn primary', type:'button', on:{ click: () => adm(() => S.db.doc('live/state').update({ status:'active', startedAt:Date.now() })) } }, 'เริ่มตอบคำถาม'),
       h('button', { class:'btn danger' + (S.ui.confirmCancel ? ' sure' : ''), type:'button', on:{ click: () => { if (S.ui.confirmCancel){ S.ui.confirmCancel = false; adm(() => S.db.doc('live/state').set({ status:'idle' })); } else { S.ui.confirmCancel = true; render(); } } } }, S.ui.confirmCancel ? 'ยืนยัน ยกเลิกรอบนี้' : 'ยกเลิกรอบนี้'),
@@ -456,14 +738,27 @@ function adminLive(){
     const ended = st && st.status === 'ended';
     frag.append(h('h1', null, ended ? 'กิจกรรมล่าสุดจบแล้ว' : 'เริ่มกิจกรรมใหม่'));
     frag.append(h('p', { class:'hint' }, ended ? 'ผลถูกบันทึกในแท็บ “สถิติ” แล้ว เริ่มรอบใหม่ได้เลย' : 'ตั้งชื่อรอบนี้ แล้วเปิดห้องให้ผู้เข้าร่วมสแกน QR เข้ามารอ คุณกดเริ่มเมื่อพร้อมให้ตอบ'));
-    const title = h('input', { type:'text', id:'sess-title', value:'Workshop ' + new Date().toLocaleDateString('th-TH', { day:'numeric', month:'short', year:'numeric' }) });
-    const auto = h('input', { type:'checkbox', id:'sess-auto', checked:true });
+    const title = h('input', { type:'text', id:'sess-title', value:(S.settings && S.settings.title) || ('Workshop ' + new Date().toLocaleDateString('th-TH', { day:'numeric', month:'short', year:'numeric' })) });
+    const auto = h('input', { type:'checkbox', id:'sess-auto', checked: !S.settings || S.settings.auto !== false });
     const en = bankQs().filter(q => q.enabled !== false).length;
+    const cs = S.settings || {};
+    const cOn = h('input', { type:'checkbox', id:'c-on', checked: cs.consentOn !== false });
+    const cTitle = h('input', { type:'text', id:'c-title', value: cs.consentTitle || DEFAULT_CONSENT.title });
+    const cBody = h('textarea', { id:'c-body', style:'min-height:260px' }, cs.consentBody || DEFAULT_CONSENT.body);
+    const cFields = h('div', null,
+      h('label', { class:'field', for:'c-title' }, 'หัวข้อ', cTitle),
+      h('label', { class:'field', for:'c-body' }, 'ข้อความ', h('span', { class:'help' }, 'เว้นบรรทัดว่างเพื่อแยกย่อหน้า แทนที่ข้อความใน [ ] และปรับให้ตรงกับโครงการของคุณ หรือวางข้อความส่วนที่ 1 ของแบบสอบถามได้เลย'), cBody));
+    cOn.addEventListener('change', () => { cFields.style.display = cOn.checked ? '' : 'none'; });
+    cFields.style.display = cOn.checked ? '' : 'none';
+    const cBox = h('div', { class:'qrcard', style:'margin-top:8px' },
+      h('label', { class:'check' }, cOn, h('span', null, 'ขอความยินยอมก่อนเข้าร่วม', h('span', { class:'small muted', style:'display:block' }, 'ผู้เข้าร่วมต้องอ่านและกดยินยอมก่อนเข้าห้องรอและตอบคำถาม'))),
+      cFields);
     frag.append(
       h('label', { class:'field', for:'sess-title' }, 'ชื่อกิจกรรม', title),
       h('label', { class:'check' }, auto, h('span', null, 'เปิดเผยผลอัตโนมัติเมื่อทุกคนที่เข้าร่วมตอบครบ', h('span', { class:'small muted', style:'display:block' }, 'ปิดไว้ถ้าอยากกดเปิดเผยเองทุกข้อ'))),
-      h('p', { class:'muted' }, 'จะใช้คำถามที่เปิดใช้ ' + en + ' ข้อ จากแท็บ “คำถาม”'),
-      h('div', { class:'actions' }, h('button', { class:'btn primary', type:'button', on:{ click: () => startSession(title.value.trim(), auto.checked) } }, 'เปิดห้องรอผู้เข้าร่วม'))
+      cBox,
+      h('p', { class:'muted', style:'margin-top:18px' }, 'จะใช้คำถามที่เปิดใช้ ' + en + ' ข้อ จากแท็บ “คำถาม”'),
+      h('div', { class:'actions' }, h('button', { class:'btn primary', type:'button', on:{ click: () => startSession(title.value.trim(), auto.checked, cOn.checked ? { title:cTitle.value.trim(), body:cBody.value.trim() } : null, cOn.checked) } }, 'เปิดห้องรอผู้เข้าร่วม'))
     );
     if (S.ui.startErr) frag.append(h('p', { class:'err' }, S.ui.startErr));
     frag.append(h('p', { class:'note' }, 'ส่งลิงก์ของหน้านี้ให้ผู้เข้าร่วมได้เลย ไม่ต้องมีบัญชี'));
@@ -490,7 +785,12 @@ function adminLive(){
     h('input', { type:'checkbox', checked: !!st.auto, on:{ change: e => adm(() => S.db.doc('live/state').update({ auto: e.target.checked })) } }),
     h('span', null, 'เปิดเผยผลอัตโนมัติเมื่อทุกคนตอบครบ')));
   frag.append(h('p', { class:'note' }, revealed ? 'ผู้เข้าร่วมเห็นผลนี้แล้ว และเห็นการเปลี่ยนแปลงสดๆ' : 'ด้านล่างเป็นภาพที่เห็นเฉพาะคุณ ผู้เข้าร่วมจะเห็นเมื่อเปิดเผยผล'));
-  frag.append(resultBlock(q, countsFor(q.id, q.options.length), { key:'adm-' + st.sid + q.id }));
+  const tl = tally(q);
+  if (q.type === 'text') frag.append(h('p', { class:'total' }, 'ส่งความเห็น ' + tl.withText + ' คน (ข้าม ' + (tl.total - tl.withText) + ' คน)'), textList('ความเห็นที่ได้รับ', textsFor(q)), cloudPanel(q, textsFor(q), { publish:true }));
+  else {
+    frag.append(resultBlock(q, tl.counts, { total:tl.total, key:'adm-' + st.sid + q.id }));
+    if (otherIdx(q) >= 0) frag.append(textList('ที่ระบุในช่อง “อื่นๆ”', textsFor(q)));
+  }
   frag.append(h('div', { class:'actions', style:'margin-top:32px' },
     h('button', { class:'btn danger' + (S.ui.confirmEnd ? ' sure' : ''), type:'button', on:{ click: () => { if (S.ui.confirmEnd) endSession(); else { S.ui.confirmEnd = true; render(); } } } }, S.ui.confirmEnd ? 'ยืนยัน จบและบันทึกสถิติ' : 'จบกิจกรรมและบันทึกสถิติ'),
     S.ui.confirmEnd ? h('button', { class:'btn sm', type:'button', on:{ click: () => { S.ui.confirmEnd = false; render(); } } }, 'ยกเลิก') : null));
@@ -499,7 +799,126 @@ function adminLive(){
 }
 
 /* ================= แอดมิน: คลังคำถาม ================= */
-function saveBank(arr){ adm(async () => { await S.db.doc('live/bank').set({ questions:arr }); S.bank = arr; S.ui.editId = null; S.ui.formErr = ''; }); }
+function saveBank(arr){ adm(async () => { await S.db.doc('live/bank').update({ questions:arr }); S.bank = arr; S.ui.editId = null; S.ui.formErr = ''; }); }
+
+/* ---------- สำรอง / ย้ายการตั้งค่า ---------- */
+function saveFile(name, text, type){
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  const a = document.createElement('a'); a.href = url; a.download = name; document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+}
+function exportSettings(withStats){
+  const data = {
+    app:'climate-voice', version:2, exportedAt:new Date().toISOString(),
+    settings:{ title:(S.settings && S.settings.title) || '', auto: S.settings ? S.settings.auto !== false : true, consentOn: S.settings ? S.settings.consentOn !== false : true, consentTitle:(S.settings && S.settings.consentTitle) || '', consentBody:(S.settings && S.settings.consentBody) || '' },
+    questions: bankQs().map(q => ({ id:q.id, type:q.type || 'single', max:q.max || null, part:q.part || '', text:q.text, hint:q.hint || '', options:q.options.map(o => o.other ? { label:o.label, other:true } : { label:o.label }), dir:q.dir || 'hot', benchmark:q.benchmark || null, enabled:q.enabled !== false, draft:q.draft !== false }))
+  };
+  if (withStats) data.archive = S.archive;
+  saveFile('climate-voice-settings-' + new Date().toISOString().slice(0, 10) + '.json', JSON.stringify(data, null, 2), 'application/json');
+}
+const SAFE_ID = /^[A-Za-z0-9_-]{1,40}$/;
+const QTYPES = ['single', 'multi', 'text'];
+function cleanBench(b, n){ return Array.isArray(b) && b.length === n && b.every(x => typeof x === 'number' && isFinite(x) && x >= 0 && x <= 100) ? b : null; }
+function parseImport(text){
+  let d; try { d = JSON.parse(text); } catch (e) { throw 'อ่านไฟล์ไม่ได้ ไม่ใช่ JSON ที่ถูกต้อง'; }
+  if (!d || d.app !== 'climate-voice' || !Array.isArray(d.questions)) throw 'ไม่ใช่ไฟล์ที่ส่งออกจากแอปนี้';
+  let skipped = 0; const ids = new Set(), questions = [];
+  d.questions.slice(0, 100).forEach(q => {
+    const type = QTYPES.includes(q && q.type) ? q.type : 'single';
+    const labels = []; let other = null;
+    (Array.isArray(q && q.options) ? q.options : []).forEach(o => {
+      const l = String(o && typeof o === 'object' ? o.label : o).trim().slice(0, 120);
+      if (!l) return;
+      if (o && typeof o === 'object' && o.other === true){ if (!other) other = l; return; }
+      if (!labels.includes(l)) labels.push(l);
+    });
+    const t = String((q && q.text) || '').trim().slice(0, 300);
+    const count = labels.length + (other ? 1 : 0);
+    if (!t || (type !== 'text' && (count < 2 || labels.length > 8))){ skipped++; return; }
+    const dir = ['hot', 'cool', 'flat'].includes(q.dir) ? q.dir : 'hot', heats = heatsFor(count, dir);
+    let id = SAFE_ID.test(String(q.id)) ? String(q.id) : uidNew('c'); if (ids.has(id)) id = uidNew('c'); ids.add(id);
+    const options = type === 'text' ? [] : labels.map((label, i) => ({ label, heat:heats[i] }));
+    if (type !== 'text' && other) options.push({ label:other, heat:heats[labels.length], other:true });
+    questions.push({ id, type, max: type === 'multi' && Number.isInteger(q.max) && q.max >= 1 && q.max <= 8 ? q.max : null, part:String(q.part || '').trim().slice(0, 100) || null, text:t, hint:String(q.hint || '').slice(0, 200), dir, enabled:q.enabled !== false, draft:q.draft !== false, benchmark: type === 'text' ? null : cleanBench(q.benchmark, options.length), options });
+  });
+  const settings = d.settings && typeof d.settings === 'object' ? { title:String(d.settings.title || '').slice(0, 120), auto:d.settings.auto !== false, consentOn:d.settings.consentOn !== false, consentTitle:String(d.settings.consentTitle || '').slice(0, 200), consentBody:String(d.settings.consentBody || '').slice(0, 5000) } : null;
+  const archive = [];
+  (Array.isArray(d.archive) ? d.archive.slice(0, 500) : []).forEach(a => {
+    if (!a || !SAFE_ID.test(String(a.sid)) || !Number.isFinite(a.endedAt) || !Array.isArray(a.questions)){ return; }
+    const qs = [];
+    a.questions.slice(0, 100).forEach(q => {
+      const type = QTYPES.includes(q && q.type) ? q.type : 'single';
+      const opts = (Array.isArray(q && q.options) ? q.options : []).map(o => { const x = { label:String(o && o.label != null ? o.label : '').slice(0, 120), heat:Number.isInteger(o && o.heat) && o.heat >= 0 && o.heat <= 5 ? o.heat : 0 }; if (o && o.other === true) x.other = true; return x; });
+      const counts = Array.isArray(q && q.counts) ? q.counts.map(c => Number.isFinite(c) && c >= 0 ? Math.floor(c) : 0) : [];
+      if (!q || !SAFE_ID.test(String(q.id))) return;
+      if (type === 'text' ? opts.length !== 0 : (opts.length < 2 || opts.length > 9 || counts.length !== opts.length)) return;
+      const total = Number.isFinite(q.total) && q.total >= 0 ? Math.floor(q.total) : counts.reduce((x, y) => x + y, 0);
+      qs.push({ id:String(q.id), type, max:Number.isInteger(q.max) ? q.max : null, part:String(q.part || '').slice(0, 100) || null, text:String(q.text || '').slice(0, 300), options:opts, benchmark:cleanBench(q.benchmark, opts.length), counts, total, withText:Number.isFinite(q.withText) ? Math.floor(q.withText) : 0, texts:(Array.isArray(q.texts) ? q.texts : []).slice(0, 300).map(x => String(x).slice(0, 1000)) });
+    });
+    const responses = (Array.isArray(a.responses) ? a.responses.slice(0, 500) : []).map(r => {
+      if (!r || typeof r !== 'object') return null;
+      const o = {};
+      Object.keys(r).forEach(k => {
+        if (!SAFE_ID.test(k)) return; const v = r[k];
+        if (Number.isInteger(v) && v >= 0 && v < 20) o[k] = v;
+        else if (Array.isArray(v)){ const l = v.filter(x => Number.isInteger(x) && x >= 0 && x < 20).slice(0, 10); if (l.length) o[k] = l; }
+      });
+      return Object.keys(o).length ? o : null;
+    }).filter(Boolean);
+    if (qs.length) archive.push({ responses, sid:String(a.sid), title:String(a.title || '').slice(0, 120), startedAt:Number.isFinite(a.startedAt) ? a.startedAt : null, endedAt:a.endedAt, participants:Number.isFinite(a.participants) ? Math.max(0, Math.floor(a.participants)) : 0, questions:qs });
+  });
+  if (!questions.length && !archive.length) throw 'ไม่พบคำถามหรือสถิติที่ใช้ได้ในไฟล์นี้';
+  return { questions, settings, archive, skipped };
+}
+function applyImport(mode){
+  const im = S.ui.imp; S.ui.confirmReplace = false;
+  adm(async () => {
+    if (im.questions.length){
+      let qs = im.questions;
+      if (mode === 'append'){
+        const cur = bankQs(), have = new Set(cur.map(q => q.id));
+        qs = cur.concat(im.questions.map(q => have.has(q.id) ? Object.assign({}, q, { id:uidNew('c') }) : q));
+      }
+      const upd = { questions:qs }; if (mode === 'replace' && im.settings) upd.settings = im.settings;
+      await S.db.doc('live/bank').update(upd);
+      S.bank = qs; if (upd.settings) S.settings = upd.settings;
+    }
+    for (const a of im.archive) await S.db.doc('archive/' + a.sid).set(a);
+    S.ui.impMsg = 'นำเข้าแล้ว ' + im.questions.length + ' คำถาม' + (im.archive.length ? ' และสถิติ ' + im.archive.length + ' กิจกรรม' : '');
+    S.ui.imp = null;
+  });
+}
+function backupPanel(){
+  const inc = h('input', { type:'checkbox', id:'exp-stats' });
+  const file = h('input', { type:'file', accept:'application/json,.json', id:'imp-file', style:'display:none', 'aria-label':'เลือกไฟล์ที่ส่งออก' });
+  file.addEventListener('change', async () => {
+    const f = file.files && file.files[0]; if (!f) return;
+    S.ui.impMsg = ''; S.ui.impErr = '';
+    try { S.ui.imp = parseImport(await f.text()); } catch (e) { S.ui.imp = null; S.ui.impErr = typeof e === 'string' ? e : 'อ่านไฟล์ไม่ได้'; }
+    render();
+  });
+  const box = h('div', { class:'qrcard' },
+    h('h2', null, 'สำรองและย้ายการตั้งค่า'),
+    h('p', { class:'hint' }, 'ส่งออกคำถาม ค่าอ้างอิงทั่วโลก และค่าตั้งต้นของกิจกรรมเป็นไฟล์ JSON เก็บไว้ใช้ซ้ำ หรือย้ายไปโปรเจกต์อื่น'),
+    h('label', { class:'check' }, inc, h('span', null, 'รวมสถิติที่บันทึกไว้ด้วย (' + S.archive.length + ' กิจกรรม)')),
+    h('div', { class:'actions', style:'margin-top:0' },
+      h('button', { class:'btn sm', type:'button', on:{ click: () => exportSettings(inc.checked) } }, 'ส่งออกเป็นไฟล์ JSON'),
+      h('button', { class:'btn sm', type:'button', on:{ click: () => file.click() } }, 'นำเข้าจากไฟล์'), file,
+      h('button', { class:'btn sm', type:'button', on:{ click: () => { S.ui.impMsg = ''; S.ui.impErr = ''; S.ui.imp = { questions:clone(DEFAULTS), settings:null, archive:[], skipped:0 }; render(); } } }, 'โหลดชุดแบบสอบถามโครงการ (ส่วนที่ 2–5)')));
+  const im = S.ui.imp;
+  if (im){
+    box.append(h('p', { style:'margin-top:16px' }, 'พบ ' + im.questions.length + ' คำถาม' + (im.archive.length ? ' และสถิติ ' + im.archive.length + ' กิจกรรม' : '') + (im.skipped ? ' (ข้าม ' + im.skipped + ' ข้อที่ข้อมูลไม่ครบ)' : '')));
+    box.append(h('div', { class:'actions' },
+      im.questions.length ? h('button', { class:'btn sm', type:'button', on:{ click: () => applyImport('append') } }, 'เพิ่มต่อท้ายคลังเดิม') : null,
+      im.questions.length ? h('button', { class:'btn sm danger' + (S.ui.confirmReplace ? ' sure' : ''), type:'button', on:{ click: () => { if (S.ui.confirmReplace) applyImport('replace'); else { S.ui.confirmReplace = true; render(); } } } }, S.ui.confirmReplace ? 'ยืนยัน แทนที่คลังเดิมทั้งหมด' : 'แทนที่คลังเดิม') : null,
+      !im.questions.length ? h('button', { class:'btn sm', type:'button', on:{ click: () => applyImport('append') } }, 'นำเข้าสถิติ') : null,
+      h('button', { class:'btn sm', type:'button', on:{ click: () => { S.ui.imp = null; S.ui.confirmReplace = false; render(); } } }, 'ยกเลิก')));
+    if (im.archive.length) box.append(h('p', { class:'note' }, 'สถิติที่นำเข้าจะรวมเข้ากับของเดิม ถ้ารหัสกิจกรรมซ้ำจะถูกเขียนทับ'));
+  }
+  if (S.ui.impErr) box.append(h('p', { class:'err' }, S.ui.impErr));
+  if (S.ui.impMsg) box.append(h('p', { class:'note' }, S.ui.impMsg));
+  return box;
+}
 
 function adminBank(){
   const qs = bankQs(), frag = document.createDocumentFragment();
@@ -509,8 +928,8 @@ function adminBank(){
   qs.forEach((q, i) => {
     if (S.ui.editId === q.id){ frag.append(qForm(q, i, qs)); return; }
     frag.append(h('div', { class:'qitem' },
-      h('div', null, h('b', null, (i + 1) + '. ' + q.text), q.draft ? h('span', { class:'tag' }, 'ร่าง ยังไม่ตรวจต้นฉบับ') : null, q.enabled === false ? h('span', { class:'tag off' }, 'ไม่ใช้') : null),
-      h('p', { class:'opts' }, q.options.map(o => o.label).join(' / ') + (q.benchmark ? '  (มีค่าอ้างอิงทั่วโลก)' : '')),
+      h('div', null, h('b', null, (i + 1) + '. ' + q.text), h('span', { class:'tag off' }, q.type === 'multi' ? 'เลือกหลายข้อ' + (q.max ? ' สูงสุด ' + q.max : '') : q.type === 'text' ? 'พิมพ์ตอบ' : 'เลือกข้อเดียว'), q.draft ? h('span', { class:'tag' }, 'ร่าง ยังไม่ตรวจต้นฉบับ') : null, q.enabled === false ? h('span', { class:'tag off' }, 'ไม่ใช้') : null),
+      h('p', { class:'opts' }, (q.part ? q.part + ' · ' : '') + (q.type === 'text' ? 'ช่องพิมพ์ข้อความ' : q.options.map(o => o.label).join(' / ')) + (q.benchmark ? '  (มีค่าอ้างอิงทั่วโลก)' : '')),
       h('div', { class:'actions', style:'margin-top:8px' },
         h('button', { class:'btn sm', type:'button', on:{ click: () => { S.ui.editId = q.id; S.ui.formErr = ''; render(); } } }, 'แก้ไข'),
         h('button', { class:'btn sm', type:'button', disabled: i === 0, on:{ click: () => { const a = qs.slice(); [a[i - 1], a[i]] = [a[i], a[i - 1]]; saveBank(a); } } }, 'เลื่อนขึ้น'),
@@ -521,41 +940,63 @@ function adminBank(){
   if (S.ui.editId === 'new') frag.append(qForm(null, qs.length, qs));
   else frag.append(h('div', { class:'actions' }, h('button', { class:'btn primary', type:'button', on:{ click: () => { S.ui.editId = 'new'; S.ui.formErr = ''; render(); } } }, 'เพิ่มคำถาม')));
   if (S.adminErr) frag.append(h('p', { class:'err' }, S.adminErr));
+  frag.append(backupPanel());
   return frag;
 }
 
 function qForm(q, idx, qs){
-  const isNew = !q;
+  const isNew = !q, oldOther = q && q.options.find(o => o.other);
+  const type = h('select', { id:'f-type' },
+    h('option', { value:'single', selected: !q || (q.type || 'single') === 'single' }, 'เลือกได้ข้อเดียว'),
+    h('option', { value:'multi', selected: !!q && q.type === 'multi' }, 'เลือกได้หลายข้อ'),
+    h('option', { value:'text', selected: !!q && q.type === 'text' }, 'พิมพ์ตอบเอง (ข้อความยาว)'));
   const text = h('textarea', { id:'f-text' }, q ? q.text : '');
-  const opts = h('textarea', { id:'f-opts', style:'min-height:130px' }, q ? q.options.map(o => o.label).join('\n') : '');
-  const dir = h('select', { id:'f-dir' }, h('option', { value:'hot', selected: !q || q.dir !== 'cool' }, 'บนสุดเป็นสีร้อน ล่างสุดเป็นสีเย็น'), h('option', { value:'cool', selected: !!q && q.dir === 'cool' }, 'บนสุดเป็นสีเย็น ล่างสุดเป็นสีร้อน'));
+  const part = h('input', { type:'text', id:'f-part', value: q && q.part ? q.part : '', placeholder:'เช่น ส่วนที่ 3: มุมมองต่อการเปลี่ยนแปลงสภาพภูมิอากาศ' });
+  const max = h('select', { id:'f-max' }, h('option', { value:'', selected: !q || !q.max }, 'ไม่จำกัด'), [1, 2, 3, 4, 5, 6, 7, 8].map(n => h('option', { value:String(n), selected: !!q && q.max === n }, 'สูงสุด ' + n + ' ข้อ')));
+  const opts = h('textarea', { id:'f-opts', style:'min-height:130px' }, q ? q.options.filter(o => !o.other).map(o => o.label).join('\n') : '');
+  const other = h('input', { type:'checkbox', id:'f-other', checked: !!oldOther });
+  const dir = h('select', { id:'f-dir' },
+    h('option', { value:'hot', selected: !q || q.dir === 'hot' || !q.dir }, 'ไล่สี บนสุดร้อน ล่างสุดเย็น (เหมาะกับระดับมาก→น้อย)'),
+    h('option', { value:'cool', selected: !!q && q.dir === 'cool' }, 'ไล่สี บนสุดเย็น ล่างสุดร้อน'),
+    h('option', { value:'flat', selected: !!q && q.dir === 'flat' }, 'สีเดียว (เหมาะกับตัวเลือกที่ไม่ใช่ระดับ เช่น อาชีพ ประเด็น)'));
   const bench = h('input', { type:'text', id:'f-bench', value: q && q.benchmark ? q.benchmark.join(', ') : '', placeholder:'เช่น 56, 20, 12, 7, 3, 2' });
   const ver = h('input', { type:'checkbox', id:'f-ver', checked: !!q && !q.draft });
   const en = h('input', { type:'checkbox', id:'f-en', checked: !q || q.enabled !== false });
   const err = h('p', { class:'err', 'aria-live':'polite' }, S.ui.formErr || '');
+  const fMax = h('label', { class:'field', for:'f-max' }, 'จำนวนที่เลือกได้', max);
+  const fOpts = h('label', { class:'field', for:'f-opts' }, 'ตัวเลือกคำตอบ', h('span', { class:'help' }, 'หนึ่งบรรทัดต่อหนึ่งตัวเลือก เรียงตามลำดับที่จะแสดง'), opts);
+  const fOther = h('label', { class:'check' }, other, h('span', null, 'เพิ่มตัวเลือก “' + (oldOther ? oldOther.label : OTHER_LABEL) + '” ต่อท้าย ให้ผู้ตอบพิมพ์เอง'));
+  const fDir = h('label', { class:'field', for:'f-dir' }, 'การไล่สี', dir);
+  const fBench = h('label', { class:'field', for:'f-bench' }, 'ค่าอ้างอิงทั่วโลก (%) ไม่บังคับ', h('span', { class:'help' }, 'เรียงตามตัวเลือก (รวมช่อง “อื่นๆ” ถ้ามี) คั่นด้วยจุลภาค'), bench);
+  const sync = () => { fMax.style.display = type.value === 'multi' ? '' : 'none'; [fOpts, fOther, fDir, fBench].forEach(e => { e.style.display = type.value === 'text' ? 'none' : ''; }); };
+  type.addEventListener('change', sync); sync();
+  const fail = m => { S.ui.formErr = m; err.textContent = m; };
   const save = () => {
-    const t = text.value.trim();
-    const labels = opts.value.split('\n').map(s => s.trim()).filter(Boolean);
+    const t = text.value.trim(), ty = type.value;
     if (!t) return fail('กรอกคำถามก่อน');
-    if (labels.length < 2 || labels.length > 8) return fail('ตัวเลือกต้องมี 2–8 ข้อ (หนึ่งข้อต่อหนึ่งบรรทัด)');
-    if (new Set(labels).size !== labels.length) return fail('มีตัวเลือกซ้ำกัน');
-    let b = null;
-    if (bench.value.trim()){
-      b = bench.value.split(/[,\s]+/).filter(Boolean).map(Number);
-      if (b.length !== labels.length || b.some(x => !isFinite(x) || x < 0 || x > 100)) return fail('ค่าอ้างอิงทั่วโลกต้องมี ' + labels.length + ' ค่า (0–100) เท่ากับจำนวนตัวเลือก');
+    let options = [], b = null;
+    if (ty !== 'text'){
+      const labels = opts.value.split('\n').map(x => x.trim()).filter(Boolean), otherOn = other.checked;
+      if (labels.length > 8 || labels.length + (otherOn ? 1 : 0) < 2) return fail('ตัวเลือกต้องมี 2–8 ข้อ (หนึ่งข้อต่อหนึ่งบรรทัด ไม่นับช่อง “อื่นๆ”)');
+      if (new Set(labels).size !== labels.length) return fail('มีตัวเลือกซ้ำกัน');
+      const heats = heatsFor(labels.length + (otherOn ? 1 : 0), dir.value);
+      options = labels.map((label, i) => ({ label, heat:heats[i] }));
+      if (otherOn) options.push({ label: oldOther ? oldOther.label : OTHER_LABEL, heat:heats[labels.length], other:true });
+      if (bench.value.trim()){
+        b = bench.value.split(/[,\s]+/).filter(Boolean).map(Number);
+        if (b.length !== options.length || b.some(x => !isFinite(x) || x < 0 || x > 100)) return fail('ค่าอ้างอิงทั่วโลกต้องมี ' + options.length + ' ค่า (0–100) เท่ากับจำนวนตัวเลือก');
+      }
     }
-    const heats = heatsFor(labels.length, dir.value);
-    const item = { id: q ? q.id : uidNew('c'), text:t, hint:'เลือกข้อที่ตรงกับคุณที่สุด', dir:dir.value, enabled:en.checked, draft:!ver.checked, benchmark:b, options: labels.map((label, i) => ({ label, heat:heats[i] })) };
+    const item = { id: q ? q.id : uidNew('c'), type:ty, text:t, hint:'', part:part.value.trim() || null, dir: ty === 'text' ? 'flat' : dir.value, max: ty === 'multi' && max.value ? Number(max.value) : null, enabled:en.checked, draft:!ver.checked, benchmark:b, options };
     const a = clone(qs); if (isNew) a.push(item); else a[idx] = item;
     saveBank(a);
   };
-  function fail(m){ S.ui.formErr = m; err.textContent = m; }
   return h('div', { class:'qitem' },
+    h('label', { class:'field', for:'f-type' }, 'รูปแบบคำถาม', type),
     h('label', { class:'field', for:'f-text' }, 'คำถาม', text),
-    h('label', { class:'field', for:'f-opts' }, 'ตัวเลือกคำตอบ', h('span', { class:'help' }, 'หนึ่งบรรทัดต่อหนึ่งตัวเลือก เรียงตามลำดับที่จะแสดง'), opts),
-    h('label', { class:'field', for:'f-dir' }, 'การไล่สี', dir),
-    h('label', { class:'field', for:'f-bench' }, 'ค่าอ้างอิงทั่วโลก (%) ไม่บังคับ', h('span', { class:'help' }, 'เรียงตามตัวเลือก คั่นด้วยจุลภาค ใช้ตัวเลขจากรายงานทางการเพื่อเปรียบเทียบ'), bench),
-    h('label', { class:'check' }, ver, h('span', null, 'ตรวจถ้อยคำเทียบกับแบบสอบถามทางการแล้ว')),
+    h('label', { class:'field', for:'f-part' }, 'หัวข้อส่วน (ไม่บังคับ)', part),
+    fMax, fOpts, fOther, fDir, fBench,
+    h('label', { class:'check' }, ver, h('span', null, 'ตรวจถ้อยคำแล้ว (เอาป้าย “ร่าง” ออก)')),
     h('label', { class:'check' }, en, h('span', null, 'ใช้ในกิจกรรมรอบถัดไป')),
     err,
     h('div', { class:'actions' },
@@ -567,7 +1008,17 @@ function qForm(q, idx, qs){
 function csvFor(list){
   const esc = v => { let s = String(v); if (/^[=+\-@]/.test(s)) s = "'" + s; return '"' + s.replace(/"/g, '""') + '"'; };
   const rows = [['session_id','session_title','ended_at','question','option','count','percent','global_percent']];
-  list.forEach(a => a.questions.forEach(q => q.options.forEach((o, i) => rows.push([a.sid, a.title, new Date(a.endedAt).toISOString(), q.text, o.label, q.counts[i], q.total ? Math.round(1000 * q.counts[i] / q.total) / 10 : 0, q.benchmark && typeof q.benchmark[i] === 'number' ? q.benchmark[i] : '']))));
+  list.forEach(a => a.questions.forEach(q => {
+    const base = [a.sid, a.title, new Date(a.endedAt).toISOString(), q.text], cs = q.counts || [];
+    if (q.type === 'text'){
+      rows.push(base.concat(['(จำนวนผู้ส่งความเห็น)', q.withText || 0, '', '']));
+      (q.texts || []).forEach(t => rows.push(base.concat(['(ความเห็น) ' + t, 1, '', ''])));
+      return;
+    }
+    const total = q.total != null ? q.total : cs.reduce((x, y) => x + y, 0);
+    q.options.forEach((o, i) => rows.push(base.concat([o.label, cs[i] || 0, total ? Math.round(1000 * (cs[i] || 0) / total) / 10 : 0, q.benchmark && typeof q.benchmark[i] === 'number' ? q.benchmark[i] : ''])));
+    (q.texts || []).forEach(t => rows.push(base.concat(['(ระบุอื่นๆ) ' + t, 1, '', ''])));
+  }));
   return '\uFEFF' + rows.map(r => r.map(esc).join(',')).join('\r\n');
 }
 async function dlCsv(list, name){
@@ -579,21 +1030,109 @@ async function dlCsv(list, name){
   } catch (e) { S.ui.dlMsg = 'ดาวน์โหลดไม่สำเร็จ'; }
   render();
 }
-function headline(q, counts){
-  const total = counts.reduce((a, b) => a + b, 0); if (!total) return 'ยังไม่มีคำตอบ';
-  const top = counts.indexOf(Math.max.apply(null, counts)), pct = Math.round(100 * counts[top] / total);
-  let s = 'ส่วนใหญ่ตอบว่า “' + q.options[top].label + '” (' + pct + '%)';
+function headline(q, counts, total){
+  if (total == null) total = counts.reduce((a, b) => a + b, 0);
+  if (!total) return 'ยังไม่มีคำตอบ';
+  const top = counts.indexOf(Math.max.apply(null, counts)), pct = Math.round(100 * counts[top] / total), multi = q.type === 'multi';
+  let s = (multi ? 'ถูกเลือกมากที่สุด: “' : 'ส่วนใหญ่ตอบว่า “') + q.options[top].label + '” (' + pct + (multi ? '% ของผู้ตอบ)' : '%)');
   if (q.benchmark && typeof q.benchmark[top] === 'number') s += ' เทียบกับทั่วโลก ' + q.benchmark[top] + '%';
   return s;
 }
 function aggregate(){
   const map = new Map();
   S.archive.forEach(a => a.questions.forEach(q => {
+    const cs = q.counts || [];
     let m = map.get(q.id);
-    if (!m){ m = { q, counts:new Array(q.options.length).fill(0), sessions:0 }; map.set(q.id, m); }
-    if (m.counts.length === q.counts.length){ q.counts.forEach((c, i) => m.counts[i] += c); m.sessions++; }
+    if (!m){ m = { q, counts:new Array(cs.length).fill(0), total:0, withText:0, sessions:0, texts:[] }; map.set(q.id, m); }
+    if (m.counts.length === cs.length){
+      cs.forEach((c, i) => { m.counts[i] += c; });
+      m.total += q.total != null ? q.total : cs.reduce((x, y) => x + y, 0);
+      m.withText += q.withText || 0; m.sessions++;
+      if (q.type === 'text') m.texts = m.texts.concat(q.texts || []).slice(0, 1000);
+    }
   }));
   return [...map.values()];
+}
+const csvEsc = v => { let t = String(v); if (/^[=+\-@]/.test(t)) t = "'" + t; return '"' + t.replace(/"/g, '""') + '"'; };
+const csvText = rows => '\uFEFF' + rows.map(r => r.map(csvEsc).join(',')).join('\r\n');
+function dlText(name, text){
+  S.ui.dlMsg = '';
+  try { saveFile(name, text, 'text/csv;charset=utf-8'); } catch (e) { S.ui.dlMsg = 'ดาวน์โหลดไม่สำเร็จ'; }
+  render();
+}
+function respondentsCsv(list){
+  const cols = [], seen = new Set();
+  list.forEach(a => a.questions.forEach(q => { if (q.type !== 'text' && !seen.has(q.id)){ seen.add(q.id); cols.push({ id:q.id, text:q.text }); } }));
+  const rows = [['session_id', 'session_title'].concat(cols.map(c => c.text))];
+  list.forEach(a => {
+    const defs = new Map(a.questions.map(q => [q.id, q]));
+    (a.responses || []).forEach(r => rows.push([a.sid, a.title].concat(cols.map(c => {
+      const q = defs.get(c.id), v = r[c.id]; if (!q || v == null) return '';
+      return (Array.isArray(v) ? v : [v]).map(i => q.options[i] ? q.options[i].label : '').filter(Boolean).join(' | ');
+    }))));
+  });
+  return csvText(rows);
+}
+function crossCompute(gid, scope, withR){
+  const list = withR.filter(a => scope === 'all' || a.sid === scope);
+  const defs = new Map(); list.forEach(a => a.questions.forEach(q => { if (!defs.has(q.id)) defs.set(q.id, q); }));
+  const g = defs.get(gid); if (!g) return null;
+  const recs = []; list.forEach(a => a.responses.forEach(r => recs.push(r)));
+  const groups = g.options.map(() => ({ n:0, recs:[] }));
+  recs.forEach(r => { const x = r[gid]; if (Number.isInteger(x) && groups[x]){ groups[x].n++; groups[x].recs.push(r); } });
+  const rows = [];
+  defs.forEach(q => {
+    if (q.id === gid || q.type === 'text') return;
+    rows.push({ q, cells: groups.map(gr => {
+      const ans = gr.recs.filter(r => hasAnswer(r[q.id]));
+      return { nAns:ans.length, counts:q.options.map((_, i) => ans.filter(r => q.type === 'multi' ? arr(r[q.id]).includes(i) : r[q.id] === i).length) };
+    }) });
+  });
+  return { g, groups, rows, total:recs.length };
+}
+function crossView(){
+  const box = h('div', null, h('h2', null, 'ดูผลแยกตามกลุ่ม'));
+  const withR = S.archive.filter(a => Array.isArray(a.responses) && a.responses.length);
+  if (!withR.length){ box.append(h('p', { class:'muted' }, 'ยังไม่มีข้อมูลรายคน กิจกรรมที่จบหลังอัปเดตนี้จะเก็บให้อัตโนมัติ (ไม่มีชื่อหรือข้อมูลที่ระบุตัวตน)')); return box; }
+  const defsAll = new Map(); withR.forEach(a => a.questions.forEach(q => { if (!defsAll.has(q.id)) defsAll.set(q.id, q); }));
+  const cands = [...defsAll.values()].filter(q => q.type === 'single' && q.options.length >= 2);
+  if (!cands.length) return box;
+  if (!S.ui.xg || !defsAll.has(S.ui.xg)) S.ui.xg = cands[0].id;
+  if (!S.ui.xs || (S.ui.xs !== 'all' && !withR.some(a => a.sid === S.ui.xs))) S.ui.xs = 'all';
+  const sg = h('select', { id:'x-g' }, cands.map(q => h('option', { value:q.id, selected: q.id === S.ui.xg }, q.text)));
+  const ss = h('select', { id:'x-s' }, h('option', { value:'all', selected: S.ui.xs === 'all' }, 'ทุกกิจกรรม'), withR.map(a => h('option', { value:a.sid, selected: S.ui.xs === a.sid }, a.title + ' (' + fmtDate(a.endedAt) + ')')));
+  sg.addEventListener('change', () => { S.ui.xg = sg.value; render(); });
+  ss.addEventListener('change', () => { S.ui.xs = ss.value; render(); });
+  box.append(h('label', { class:'field', for:'x-g' }, 'แยกตามคำถาม', sg), h('label', { class:'field', for:'x-s' }, 'ข้อมูลจาก', ss));
+  const r = crossCompute(S.ui.xg, S.ui.xs, withR); if (!r) return box;
+  box.append(h('p', { class:'muted small' }, 'ผู้ตอบข้อ “' + r.g.text + '” ' + r.groups.reduce((x, y) => x + y.n, 0) + ' คน ตัวเลขในตารางเป็นร้อยละของคนในกลุ่มนั้นที่ตอบข้อนั้น'));
+  r.rows.forEach(row => {
+    const tbl = h('table', { class:'xt' },
+      h('thead', null, h('tr', null, h('th', null, ''), r.groups.map((gr, gi) => h('th', null, r.g.options[gi].label, h('small', null, 'n = ' + gr.n + (gr.n < 5 ? ' *' : '')))))),
+      h('tbody', null, row.q.options.map((o, i) => h('tr', null, h('td', { class:'xl' }, o.label), row.cells.map(c => {
+        const pct = c.nAns ? Math.round(100 * c.counts[i] / c.nAns) : null;
+        return h('td', { style: pct == null ? null : '--p:' + pct + '%' }, pct == null ? '-' : pct + '%');
+      })))));
+    box.append(h('div', { class:'xwrap' }, h('b', null, (row.q.part ? row.q.part + ': ' : '') + row.q.text), h('div', { class:'xscroll' }, tbl)));
+  });
+  box.append(h('p', { class:'note' }, '* กลุ่มนี้มีผู้ตอบน้อยกว่า 5 คน ตัวเลขผันผวนง่ายและอาจระบุตัวบุคคลได้ในห้องเล็ก ใช้ตีความด้วยความระมัดระวัง'));
+  if (S.dl) box.append(h('div', { class:'actions' }, h('button', { class:'btn sm', type:'button', on:{ click: () => {
+    const rows = [['group_question', 'group', 'group_n', 'question', 'option', 'answered_n', 'count', 'percent']];
+    r.rows.forEach(row => row.q.options.forEach((o, i) => row.cells.forEach((c, gi) => rows.push([r.g.text, r.g.options[gi].label, r.groups[gi].n, row.q.text, o.label, c.nAns, c.counts[i], c.nAns ? Math.round(1000 * c.counts[i] / c.nAns) / 10 : '']))));
+    dlText('climate-voice-crosstab.csv', csvText(rows));
+  } } }, 'ดาวน์โหลด CSV ตารางนี้')));
+  return box;
+}
+function qStat(q, counts, total, withText, texts){
+  const box = h('div', { style:'margin-top:20px' });
+  box.append(h('b', null, (q.part ? q.part + ': ' : '') + q.text));
+  if (q.type === 'text'){
+    box.append(h('p', { class:'headline' }, 'ได้รับความเห็น ' + withText + ' ข้อความ'));
+    if (texts && texts.length) box.append(cloudPanel(q, texts));
+  } else {
+    box.append(h('p', { class:'headline' }, headline(q, counts, total)), h('p', { class:'muted small', style:'margin:2px 0 0' }, 'จากผู้ตอบ ' + total + ' คน'), resultBlock(q, counts, { kind:'bars', total }));
+  }
+  return box;
 }
 function adminStats(){
   const frag = document.createDocumentFragment(), A = S.archive;
@@ -601,19 +1140,15 @@ function adminStats(){
   if (!S.archiveReady) { frag.append(h('p', { class:'hint' }, 'กำลังโหลด…')); return frag; }
   if (!A.length){ frag.append(h('p', { class:'hint' }, 'ยังไม่มีกิจกรรมที่จบ เมื่อกดจบกิจกรรม ผลจะถูกเก็บไว้ที่นี่')); return frag; }
   const people = A.reduce((s, a) => s + (a.participants || 0), 0);
+  const hasR = A.some(a => Array.isArray(a.responses) && a.responses.length);
   frag.append(h('div', { class:'stat' }, h('div', null, h('span', { class:'big' }, A.length), h('small', null, 'กิจกรรม')), h('div', null, h('span', { class:'big' }, people), h('small', null, 'ผู้เข้าร่วมรวม'))));
-  if (S.dl) frag.append(h('div', { class:'actions', style:'margin-top:12px' }, h('button', { class:'btn sm', type:'button', on:{ click: () => dlCsv(A, 'climate-voice-all.csv') } }, 'ดาวน์โหลด CSV ทุกกิจกรรม')));
+  if (S.dl) frag.append(h('div', { class:'actions', style:'margin-top:12px' }, h('button', { class:'btn sm', type:'button', on:{ click: () => dlCsv(A, 'climate-voice-all.csv') } }, 'ดาวน์โหลด CSV ทุกกิจกรรม'),
+    hasR ? h('button', { class:'btn sm', type:'button', on:{ click: () => dlText('climate-voice-respondents.csv', respondentsCsv(A)) } }, 'ดาวน์โหลด CSV รายคน (ไม่ระบุตัวตน)') : null));
   if (S.ui.dlMsg) frag.append(h('p', { class:'err' }, S.ui.dlMsg));
 
   frag.append(h('h2', null, 'ภาพรวมสะสม'));
-  aggregate().forEach(m => {
-    const total = m.counts.reduce((a, b) => a + b, 0);
-    frag.append(h('div', { style:'margin-top:22px' },
-      h('b', null, m.q.text),
-      h('p', { class:'headline' }, headline(m.q, m.counts)),
-      h('p', { class:'muted small', style:'margin:2px 0 0' }, 'จาก ' + total + ' คำตอบ ใน ' + m.sessions + ' กิจกรรม'),
-      resultBlock(m.q, m.counts, { kind:'bars' })));
-  });
+  aggregate().forEach(m => frag.append(qStat(m.q, m.counts, m.total, m.withText, m.texts)));
+  frag.append(crossView());
 
   frag.append(h('h2', null, 'รายกิจกรรม'));
   A.forEach(a => {
@@ -625,7 +1160,11 @@ function adminStats(){
           h('button', { class:'btn sm', type:'button', 'aria-expanded': open ? 'true' : 'false', on:{ click: () => { S.ui.openArch = open ? null : a.sid; render(); } } }, open ? 'ซ่อน' : 'ดูผล'),
           S.dl ? h('button', { class:'btn sm', type:'button', on:{ click: () => dlCsv([a], 'climate-voice-' + a.sid + '.csv') } }, 'CSV') : null,
           h('button', { class:'btn sm danger' + (S.ui.delA === a.sid ? ' sure' : ''), type:'button', on:{ click: () => { if (S.ui.delA === a.sid){ S.ui.delA = null; adm(() => S.db.doc('archive/' + a.sid).delete()); } else { S.ui.delA = a.sid; render(); } } } }, S.ui.delA === a.sid ? 'ยืนยันลบ' : 'ลบ'))));
-    if (open) a.questions.forEach((q, i) => box.append(h('div', { style:'margin-top:18px' }, h('b', null, (i + 1) + '. ' + q.text), h('p', { class:'headline' }, headline(q, q.counts)), resultBlock(q, q.counts, { kind:'bars' }))));
+    if (open) a.questions.forEach(q => {
+      const qs = qStat(q, q.counts || [], q.total != null ? q.total : (q.counts || []).reduce((x, y) => x + y, 0), q.withText || 0, q.texts || []);
+      if ((q.texts || []).length) qs.append(h('details', null, h('summary', null, (q.type === 'text' ? 'ความเห็นที่ได้รับ' : 'ที่ระบุในช่อง “อื่นๆ”') + ' (' + q.texts.length + ')'), h('ul', { class:'tlist' }, q.texts.map(t => h('li', null, t)))));
+      box.append(qs);
+    });
     frag.append(box);
   });
   return frag;
@@ -655,7 +1194,7 @@ function render(){
   if (S.ui.qrFull && S.isAdmin && S.mode === 'live'){ $nav.hidden = true; $app.replaceChildren(qrFullView()); return; }
   if (S.ui.login && S.mode === 'live'){ $nav.hidden = true; $app.replaceChildren(loginView()); return; }
   let v;
-  if (S.mode === 'loading' || (S.mode === 'live' && !(S.stateReady && S.votesReady))) v = msgView('กำลังเชื่อมต่อ…');
+  if (S.mode === 'loading' || (S.mode === 'live' && !(S.stateReady && S.votesReady && S.consentReady))) v = msgView('กำลังเชื่อมต่อ…');
   else if (S.mode !== 'live') v = S.errMsg === 'setup'
     ? msgView('ยังไม่ได้ตั้งค่า Firebase', 'เปิดไฟล์นี้ด้วยตัวแก้ไขข้อความ แล้วใส่ค่าใน FIREBASE_CONFIG ตอนต้นของสคริปต์ (ขั้นตอนอยู่ใน README)')
     : msgView('เข้าร่วมไม่ได้ในตอนนี้', S.errMsg || 'ตรวจอินเทอร์เน็ตแล้วรีเฟรชหน้านี้');
@@ -676,12 +1215,13 @@ function afterData(){ ensureJoined(); updatePresence(); checkAuto(); schedule();
 /* ================= เชื่อมต่อ Firebase Realtime Database ================= */
 const arr = x => Array.isArray(x) ? x : (x && typeof x === 'object' ? Object.keys(x).sort((a, b) => a - b).map(k => x[k]) : []);
 function normQ(q){
-  q = Object.assign({}, q); q.options = arr(q.options).filter(Boolean);
+  q = Object.assign({}, q); q.type = QTYPES.includes(q.type) ? q.type : 'single'; q.options = arr(q.options).filter(Boolean);
+  if (q.texts) q.texts = arr(q.texts);
   if (q.benchmark) q.benchmark = arr(q.benchmark); else q.benchmark = null;
   if (q.counts) q.counts = arr(q.counts);
   return q;
 }
-const normState = d => d ? Object.assign({}, d, { questions: arr(d.questions).filter(Boolean).map(normQ), revealed: d.revealed || {} }) : null;
+const normState = d => d ? Object.assign({}, d, { questions: arr(d.questions).filter(Boolean).map(normQ), revealed: d.revealed || {}, cloud: Object.fromEntries(Object.entries(d.cloud || {}).map(([k, v]) => [k, arr(v).filter(x => x && typeof x.w === 'string').map(x => [x.w, Number(x.c) || 1])])) }) : null;
 
 /* ตัวแปลงให้เรียกใช้รูปแบบเดียวกับโค้ดด้านบน (doc/collection/set/update/onSnapshot) */
 function mkDb(rdb){
@@ -746,6 +1286,7 @@ function boot(){
     started = true;
     S.uid = u.uid; S.anon = u.isAnonymous; S.dl = true;
     const db = S.db = mkDb(rdb); S.rdb = rdb;
+    rdb.ref('consents/' + u.uid).once('value').then(x => { S.myConsent = x.val(); }).catch(() => {}).then(() => { S.consentReady = true; render(); });
     if (!u.isAnonymous){
       try { S.isAdmin = (await rdb.ref('admins/' + u.uid).once('value')).val() === true; } catch (e) { S.isAdmin = false; }
     }
@@ -768,10 +1309,19 @@ function boot(){
       db.doc('live/bank').onSnapshot(s => {
         const d = s.exists ? s.data() : null;
         S.bank = d && d.questions ? arr(d.questions).filter(Boolean).map(normQ) : null;
+        S.settings = d && d.settings && typeof d.settings === 'object' ? d.settings : null;
         if (!(S.tab === 'bank' && S.ui.editId)) render();
       }, () => {});
+      db.collection('consents').onSnapshot(snap => {
+        const m = {}; snap.docs.forEach(x => { const d = x.data(); if (d) m[x.id] = d; });
+        S.consents = m; schedule();
+      }, () => {});
+      db.collection('texts').onSnapshot(snap => {
+        const m = {}; snap.docs.forEach(x => { const d = x.data(); if (d) m[x.id] = d; });
+        S.texts = m; schedule();
+      }, () => {});
       db.collection('archive').orderBy('endedAt', 'desc').onSnapshot(snap => {
-        S.archive = snap.docs.map(x => x.data()).filter(Boolean).map(a => Object.assign({}, a, { questions: arr(a.questions).filter(Boolean).map(normQ) }));
+        S.archive = snap.docs.map(x => x.data()).filter(Boolean).map(a => Object.assign({}, a, { questions: arr(a.questions).filter(Boolean).map(normQ).map(q => Object.assign(q, { counts: q.counts || [], texts: q.texts || [] })), responses: arr(a.responses).filter(Boolean) }));
         S.archiveReady = true; if (S.tab === 'stats') schedule();
       }, () => { S.archiveReady = true; });
     }
