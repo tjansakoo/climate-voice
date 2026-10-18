@@ -126,6 +126,8 @@ body.board .rownum{font-size:1.45rem}
 body.board .qrbox svg{width:min(62vh,72vw,460px);margin:12px auto}
 .board-nav{position:fixed;left:0;right:0;bottom:0;display:flex;gap:14px;justify-content:center;align-items:center;flex-wrap:wrap;padding:14px 16px calc(14px + env(safe-area-inset-bottom,0px));background:var(--bg);border-top:1px solid var(--line)}
 .live-badge{font-weight:600;color:var(--c0)}
+.board-opt{display:flex;align-items:center;gap:16px;padding:12px 20px;border:1.5px solid var(--line);border-radius:14px;font-size:1.35rem;margin-bottom:10px;background:var(--surface)}
+.board-opt .sw{flex:none;width:22px;height:22px;border-radius:50%}
 svg.cloud{display:block;width:100%;height:auto;margin-top:8px}
 svg.cloud text{font-family:var(--font-display);font-weight:600}
 svg.cloud text:focus-visible{outline:2px solid var(--ink)}
@@ -827,6 +829,9 @@ function boardView(){
   const tl = tally(q);
   if (!revealed){
     const online = activeIds().size, ans = answeredActive(q.id), joined = Math.max(online, ans);
+    box.append(h('p', { class:'hint' }, qHint(q)));
+    if (q.type === 'text') box.append(h('p', { class:'total' }, 'พิมพ์ความเห็นของคุณผ่านมือถือ'));
+    else box.append(h('div', null, q.options.map(o => h('div', { class:'board-opt' }, h('span', { class:'sw', style:'background:var(--c' + o.heat + ')' }), o.label))));
     box.append(h('div', { class:'sent', 'aria-live':'polite' }, 'กำลังรอคำตอบ ' + ans + ' จาก ' + joined + ' คน ผลจะขึ้นเมื่อผู้ดำเนินกิจกรรมเปิดเผย', h('div', { class:'meter' }, h('b', { style:'width:' + (joined ? Math.round(100 * ans / joined) : 0) + '%' }))));
   } else if (q.type === 'text'){
     box.append(h('p', { class:'total' }, 'มีผู้ร่วมแสดงความเห็น ' + tl.withText + ' คน')); const pc = publicCloud(q, st); if (pc) box.append(pc);
