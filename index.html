@@ -644,7 +644,7 @@ function startSession(title, auto, consent, consentOn){
   const mains = qs.map((q, i) => q.lobby ? -1 : i).filter(i => i >= 0);
   if (!mains.length){ S.ui.startErr = 'ต้องมีคำถามหลักที่ไม่ใช่ “ถามในห้องรอ” อย่างน้อย 1 ข้อ (แท็บ “คำถาม”)'; render(); return; }
   if (consent && (!consent.body || /\[ใส่/.test(consent.title + consent.body))){ S.ui.startErr = 'แก้ข้อความ “[ใส่…]” ในหน้าขอความยินยอมให้เรียบร้อยก่อนเริ่ม'; render(); return; }
-  S.ui.startErr = '';
+  S.ui.startErr = ''; S.ui.sf = null;
   adm(async () => {
     const cfg = { title:title || 'Workshop', auto:!!auto, consentOn:!!consentOn };
     if (consent){ cfg.consentTitle = consent.title; cfg.consentBody = consent.body; }
@@ -914,13 +914,19 @@ function adminLive(){
     const ended = st && st.status === 'ended';
     frag.append(h('h1', null, ended ? 'กิจกรรมล่าสุดจบแล้ว' : 'เริ่มกิจกรรมใหม่'));
     frag.append(h('p', { class:'hint' }, ended ? 'ผลถูกบันทึกในแท็บ “สถิติ” แล้ว เริ่มรอบใหม่ได้เลย' : 'ตั้งชื่อรอบนี้ แล้วเปิดห้องให้ผู้เข้าร่วมสแกน QR เข้ามารอ คุณกดเริ่มเมื่อพร้อมให้ตอบ'));
-    const title = h('input', { type:'text', id:'sess-title', value:(S.settings && S.settings.title) || ('Workshop ' + new Date().toLocaleDateString('th-TH', { day:'numeric', month:'short', year:'numeric' })) });
-    const auto = h('input', { type:'checkbox', id:'sess-auto', checked: !S.settings || S.settings.auto !== false });
+    const sf = S.ui.sf = S.ui.sf || {};   /* ร่างค่าในฟอร์ม กันค่าที่พิมพ์หายเมื่อหน้าถูกวาดใหม่ */
+    const title = h('input', { type:'text', id:'sess-title', value: sf.title != null ? sf.title : ((S.settings && S.settings.title) || ('Workshop ' + new Date().toLocaleDateString('th-TH', { day:'numeric', month:'short', year:'numeric' }))) });
+    const auto = h('input', { type:'checkbox', id:'sess-auto', checked: sf.auto != null ? sf.auto : (!S.settings || S.settings.auto !== false) });
     const en = bankQs().filter(q => q.enabled !== false).length;
     const cs = S.settings || {};
-    const cOn = h('input', { type:'checkbox', id:'c-on', checked: cs.consentOn !== false });
-    const cTitle = h('input', { type:'text', id:'c-title', value: cs.consentTitle || DEFAULT_CONSENT.title });
-    const cBody = h('textarea', { id:'c-body', style:'min-height:260px' }, cs.consentBody || DEFAULT_CONSENT.body);
+    const cOn = h('input', { type:'checkbox', id:'c-on', checked: sf.cOn != null ? sf.cOn : cs.consentOn !== false });
+    const cTitle = h('input', { type:'text', id:'c-title', value: sf.cTitle != null ? sf.cTitle : (cs.consentTitle || DEFAULT_CONSENT.title) });
+    const cBody = h('textarea', { id:'c-body', style:'min-height:260px' }, sf.cBody != null ? sf.cBody : (cs.consentBody || DEFAULT_CONSENT.body));
+    title.addEventListener('input', () => { sf.title = title.value; });
+    auto.addEventListener('change', () => { sf.auto = auto.checked; });
+    cOn.addEventListener('change', () => { sf.cOn = cOn.checked; });
+    cTitle.addEventListener('input', () => { sf.cTitle = cTitle.value; });
+    cBody.addEventListener('input', () => { sf.cBody = cBody.value; });
     const cFields = h('div', null,
       h('label', { class:'field', for:'c-title' }, 'หัวข้อ', cTitle),
       h('label', { class:'field', for:'c-body' }, 'ข้อความ', h('span', { class:'help' }, 'เว้นบรรทัดว่างเพื่อแยกย่อหน้า แทนที่ข้อความใน [ ] และปรับให้ตรงกับโครงการของคุณ หรือวางข้อความส่วนที่ 1 ของแบบสอบถามได้เลย'), cBody));
@@ -936,7 +942,7 @@ function adminLive(){
       h('p', { class:'muted', style:'margin-top:18px' }, 'จะใช้คำถามที่เปิดใช้ ' + en + ' ข้อ จากแท็บ “คำถาม”'),
       h('div', { class:'actions' }, h('button', { class:'btn primary', type:'button', on:{ click: () => startSession(title.value.trim(), auto.checked, cOn.checked ? { title:cTitle.value.trim(), body:cBody.value.trim() } : null, cOn.checked) } }, 'เปิดห้องรอผู้เข้าร่วม'))
     );
-    if (S.ui.startErr) frag.append(h('p', { class:'err' }, S.ui.startErr));
+    if (S.ui.startErr){ frag.append(h('p', { class:'err', id:'start-err', role:'alert' }, S.ui.startErr)); setTimeout(() => { const e = document.getElementById('start-err'); if (e && e.scrollIntoView) e.scrollIntoView({ block:'center' }); }, 0); }
     frag.append(h('p', { class:'note' }, 'ส่งลิงก์ของหน้านี้ให้ผู้เข้าร่วมได้เลย ไม่ต้องมีบัญชี'));
     if (S.adminErr) frag.append(h('p', { class:'err' }, S.adminErr));
     return frag;
@@ -1516,7 +1522,7 @@ function boot(){
         const d = s.exists ? s.data() : null;
         S.bank = d && d.questions ? arr(d.questions).filter(Boolean).map(normQ) : null;
         S.settings = d && d.settings && typeof d.settings === 'object' ? d.settings : null;
-        if (!(S.tab === 'bank' && S.ui.editId)) render();
+        if (!(S.tab === 'bank' && S.ui.editId)){ if (S.tab === 'bank') render(); else schedule(); }
       }, () => {});
       db.collection('consents').onSnapshot(snap => {
         const m = {}; snap.docs.forEach(x => { const d = x.data(); if (d) m[x.id] = d; });
